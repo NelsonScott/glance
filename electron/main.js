@@ -5,7 +5,9 @@
 // - Tray menu + global shortcut (Ctrl+Cmd+D) to summon/dismiss manually.
 const { app, BrowserWindow, powerMonitor, Tray, Menu, globalShortcut, nativeImage } = require('electron');
 
-const DASH_URL  = process.env.GLANCE_URL  || 'http://localhost:8090/';
+// Feed service now runs on the Khadas (Home Assistant add-on "Glance Feeds"), not the Mac.
+// Override with GLANCE_URL=... to point elsewhere (e.g. http://localhost:8090/ for a local dev server).
+const DASH_URL  = process.env.GLANCE_URL  || 'http://192.168.0.214:8090/';
 const IDLE_SECS = Number(process.env.GLANCE_IDLE || 300);   // 5 min idle → popup
 let win, tray, autoShown = false, idleEnabled = true;
 

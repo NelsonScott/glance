@@ -16,7 +16,7 @@ from flask import Flask, jsonify, send_from_directory
 from google.transit import gtfs_realtime_pb2
 import providers
 from nitehawk import get_showtimes, get_next_showtimes
-from comedy import get_comedy
+from comedy_lite import get_comedy   # POC: browserless drop-in (was `from comedy import get_comedy`)
 
 app = Flask(__name__)
 LAT, LON = 40.7222, -73.9573
