@@ -57,20 +57,9 @@ feed_server.py ──/all──► live.js ──renders──► tiles
 Weather/AQI/UV (Open-Meteo) · L train (MTA GTFS-RT) · NYC Ferry (NYC Ferry GTFS) ·
 Citi Bike (GBFS) · live city cams (YouTube) · Knicks / Yankees / Mets / Rangers (ESPN) ·
 Nitehawk + comedy showtimes (scrape) · Word of the Day (dictionary API) ·
-Around Town (Gmail via `gog`) · Next Up with train/Uber/e-bike "leave by" (Google Directions).
-
-All keyless **except**: Google Maps API key (commute; Keychain `google-maps-key`) and Gmail (`gog`).
-
-## Loose ends
-
-- [ ] Push to a private GitHub remote
-- [ ] Auto-start at login (Glance.app + feed service via launchd)
-- [ ] Move the feed service to the Pi/Khadas (always-on, independent of the Mac)
-- [ ] Optional: true macOS screensaver / lock screen (WebViewScreenSaver → the dashboard URL)
-- [ ] More widgets: Home/Home-Assistant status, news digest, important-email triage
+Around Town · Next Up with train/Uber/e-bike "leave by" times.
 
 ## Notes
 
 - Only launch `/Applications/Glance.app` — running `npm start` shows a duplicate "Electron" app.
 - Electron catches `SIGTERM`; use `pkill -9` to kill stray instances.
-- Feed service currently lives on the Mac, so it stops when the Mac sleeps (see loose ends).
