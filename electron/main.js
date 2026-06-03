@@ -9,6 +9,12 @@ const DASH_URL  = process.env.GLANCE_URL  || 'http://localhost:8090/';
 const IDLE_SECS = Number(process.env.GLANCE_IDLE || 300);   // 5 min idle → popup
 let win, tray, autoShown = false, idleEnabled = true;
 
+// one running instance only; a second launch just summons the existing one
+if (!app.requestSingleInstanceLock()) app.quit();
+app.on('second-instance', () => showDash(false));
+// make Cmd+Q (and any real quit) actually quit, not get swallowed by the hide-on-close handler
+app.on('before-quit', () => { app.isQuitting = true; });
+
 function createWindow() {
   win = new BrowserWindow({
     width: 1920, height: 1080, show: false,
@@ -18,17 +24,26 @@ function createWindow() {
   win.loadURL(DASH_URL);
   // closing the window just hides it — app keeps living in the tray
   win.on('close', (e) => { if (!app.isQuitting) { e.preventDefault(); hideDash(); } });
+  // Escape (and Cmd+W) dismiss the dashboard cleanly
+  win.webContents.on('before-input-event', (e, input) => {
+    if (input.type !== 'keyDown') return;
+    if (input.key === 'Escape' || (input.meta && input.key.toLowerCase() === 'w')) { e.preventDefault(); hideDash(); }
+  });
 }
 
 function showDash(auto) {
   if (!win || win.isDestroyed()) createWindow();
   autoShown = !!auto;
   win.setAlwaysOnTop(!!auto, 'screen-saver');   // float over everything when auto-triggered
-  win.setFullScreen(true);
+  if (!win.isSimpleFullScreen()) win.setSimpleFullScreen(true);  // NOT native fullscreen (avoids the black-Space bug)
   win.show(); win.focus();
 }
 function hideDash() {
-  if (win && !win.isDestroyed()) { win.setAlwaysOnTop(false); win.setFullScreen(false); win.hide(); }
+  if (win && !win.isDestroyed()) {
+    win.setAlwaysOnTop(false);
+    win.setSimpleFullScreen(false);
+    win.hide();
+  }
   autoShown = false;
 }
 

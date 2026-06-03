@@ -17,3 +17,4 @@ feeds-verify/*.jpg
 .DS_Store
 
 # keep: webapp/, feeds-verify/*.py, electron/main.js, electron/package.json, docs
+electron/dist/
