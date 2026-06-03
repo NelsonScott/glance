@@ -144,12 +144,19 @@
 
   function renderFerry(fe) {
     const fn = (fe && fe.north_williamsburg) || {};
-    const sched = fn.scheduled || [], last = fn.last;
-    const a = splitAP(sched[0] && sched[0].time);
+    const sched = fn.scheduled || [], lastDest = fn.last_dest || {};
+    const pick = (d) => sched.filter(s => s.dest === d).slice(0, 2).map(s => s.time).join('  ·  ');
+    const row = (arrow, dest, times, last) => times
+      ? `<div style="display:flex;align-items:baseline;gap:12px;padding:4px 0">
+           <span style="min-width:96px;color:var(--c-cyan);font-weight:700;font-size:16px">${arrow} ${dest}</span>
+           <span style="font-family:'JetBrains Mono',monospace;font-size:19px;font-weight:600;font-variant-numeric:tabular-nums">${times}</span>
+           ${last ? `<span style="margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0.06em;text-transform:uppercase;color:var(--ink-faint)">last <span style="font-size:14px;font-weight:700;color:var(--c-cyan)">${last}</span></span>` : ''}</div>`
+      : '';
     qs('.ferr .fr-body').innerHTML =
-      `<div class="fr-times"><span class="t1">${a.n}<span class="ap">${a.ap}</span></span>` +
-      (sched[1] ? `<span class="t2">${sched[1].time}</span>` : '') + `</div>` +
-      `<div class="fr-last"><div class="v">${last ? last.time : '–'}</div><div class="k">Last ferry</div></div>`;
+      `<div style="display:flex;flex-direction:column;justify-content:center;flex:1">
+         ${row('↓', 'Wall St', pick('Wall St'), lastDest['Wall St'])}
+         ${row('↑', 'E 34 St', pick('E 34 St'), lastDest['E 34 St'])}
+       </div>`;
   }
 
   function renderBike(cb) {

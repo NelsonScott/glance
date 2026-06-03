@@ -144,27 +144,40 @@ def ferry():
     def _hhmm(s):
         h = (s // 3600) % 24; m = (s % 3600) // 60
         return f"{(h % 12) or 12}:{m:02d}{'am' if h < 12 else 'pm'}"
+    def _dest(hs):  # headsign → short destination label (direction)
+        h = (hs or "").lower()
+        return "Wall St" if "wall" in h else "E 34 St" if "34" in h else (hs or "")
     def nexts(sid):
-        # today's remaining departures
-        today = sorted({r[0] for r in static["by_stop"].get(sid, [])
-                        if _service_active(r[3], static, now) and r[0] >= secs_now - 60})
-        out = [{"in_min": round((s - secs_now)/60), "time": _hhmm(s), "day": "today"} for s in today]
-        # roll into tomorrow's earliest if today is short
-        if len(out) < 4:
-            tmw = sorted({r[0] for r in static["by_stop"].get(sid, [])
-                          if _service_active(r[3], static, tomorrow)})
-            for s in tmw[:4 - len(out)]:
-                out.append({"in_min": round((s + 86400 - secs_now)/60), "time": _hhmm(s), "day": "tomorrow"})
-        return out[:4]
+        rows = static["by_stop"].get(sid, [])
+        today = {r[0]: _dest(r[2]) for r in rows
+                 if _service_active(r[3], static, now) and r[0] >= secs_now - 60}
+        out = [{"in_min": round((s - secs_now)/60), "time": _hhmm(s), "day": "today", "dest": today[s]}
+               for s in sorted(today)]
+        if len(out) < 6:  # roll into tomorrow's earliest if today is short
+            tmw = {r[0]: _dest(r[2]) for r in rows if _service_active(r[3], static, tomorrow)}
+            for s in sorted(tmw)[:6 - len(out)]:
+                out.append({"in_min": round((s + 86400 - secs_now)/60), "time": _hhmm(s),
+                            "day": "tomorrow", "dest": tmw[s]})
+        return out[:6]
     def last_dep(sid, when):
         times = sorted({r[0] for r in static["by_stop"].get(sid, []) if _service_active(r[3], static, when)})
         return times[-1] if times else None
+    def last_by_dest(sid, when):  # latest departure time per destination/direction
+        res = {}
+        for r in static["by_stop"].get(sid, []):
+            if _service_active(r[3], static, when):
+                d = _dest(r[2])
+                if r[0] > res.get(d, -1):
+                    res[d] = r[0]
+        return {d: _hhmm(s) for d, s in res.items()}
     def direction(sid):
         sched = nexts(sid)
         day_ctx = sched[0]["day"] if sched else "today"
-        ls = last_dep(sid, tomorrow if day_ctx == "tomorrow" else now)
+        when = tomorrow if day_ctx == "tomorrow" else now
+        ls = last_dep(sid, when)
         return {"scheduled": sched, "realtime_min": sorted(rt[sid])[:4],
-                "last": {"time": _hhmm(ls), "day": day_ctx} if ls is not None else None}
+                "last": {"time": _hhmm(ls), "day": day_ctx} if ls is not None else None,
+                "last_dest": last_by_dest(sid, when)}
     return jsonify({"north_williamsburg": direction("19"),
                     "south_williamsburg": direction("8"),
                     "updated": now.strftime("%H:%M")})
