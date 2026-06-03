@@ -1,0 +1,143 @@
+# Glance Dashboard — Lovelace (YAML mode), dark "Glance" theme.
+# 2 columns: LEFT = local/transit/media, RIGHT = personal/sports/listings.
+title: Glance
+views:
+  - title: Home
+    path: home
+    type: sections
+    max_columns: 2
+    theme: Glance
+    sections:
+      # ============================= LEFT COLUMN =============================
+      - type: grid
+        cards:
+          # --- Weather + AQI ---
+          - type: markdown
+            content: |
+              # <font color="#ffb454">🌤️ {{ states('sensor.glance_weather_temp') }}°F</font> &nbsp; {{ state_attr('sensor.glance_weather_temp','desc') }}
+
+              Feels **{{ state_attr('sensor.glance_weather_temp','feels') }}°** &nbsp;·&nbsp;
+              Humidity **{{ state_attr('sensor.glance_weather_temp','humidity') }}%** &nbsp;·&nbsp;
+              Wind **{{ state_attr('sensor.glance_weather_temp','wind') }} mph**
+
+              🌅 {{ state_attr('sensor.glance_weather_temp','sunrise') }} &nbsp;·&nbsp; 🌇 {{ state_attr('sensor.glance_weather_temp','sunset') }}
+              {% set aqi = states('sensor.glance_air_quality')|int(0) %}
+              {% set ac = '#4ade80' if aqi<=50 else '#facc15' if aqi<=100 else '#fb923c' if aqi<=150 else '#f87171' %}
+              &nbsp;·&nbsp; <font color="{{ ac }}">**● AQI {{ aqi }} {{ state_attr('sensor.glance_air_quality','category') }}**</font>
+
+              {% for d in state_attr('sensor.glance_weather_temp','forecast') or [] -%}
+              <font color="#8a96a8">**{{ as_timestamp(d.date) | timestamp_custom('%a', true) }}**</font> &nbsp; {{ d.min }}–{{ d.max }}°F &nbsp;·&nbsp; {{ d.precip }}% &nbsp;·&nbsp; {{ d.desc }}
+              {% endfor %}
+          # --- Live Cams ---
+          - type: markdown
+            content: "# <font color='#38bdf8'>🎥 Live Cams</font> <font color='#8a96a8'>· rotating</font>"
+          - type: iframe
+            url: "http://192.168.0.79:8090/citycam"
+            aspect_ratio: "56%"
+          # --- Ferry (North Williamsburg) ---
+          - type: markdown
+            content: |
+              # <font color="#2dd4bf">⛴️ NYC Ferry</font> <font color="#8a96a8">· N. Williamsburg</font>
+              {% set n = state_attr('sensor.glance_ferry','north_williamsburg') or {} %}
+              {% for t in n.get('scheduled', [])[:2] -%}
+              - **{{ t.time }}**{% if t.day == 'tomorrow' %} <font color="#8a96a8">tmrw</font>{% else %} <font color="#8a96a8">in {{ t.in_min }} min</font>{% endif %}
+              {% endfor %}
+              {% set ln = n.get('last') %}
+              {% if ln %}- 🏁 **{{ ln.time }}**{% if ln.day == 'tomorrow' %} <font color="#8a96a8">tmrw</font>{% endif %} <font color="#8a96a8">last ferry</font>{% endif %}
+          # --- Citi Bike ---
+          - type: markdown
+            content: |
+              # <font color="#4ade80">🚲 Citi Bike</font>
+              {% for s in state_attr('sensor.glance_citi_bike','stations') or [] -%}
+              **{{ s.name }}**
+              &nbsp;&nbsp;🚲 {{ s.bikes }} &nbsp; ⚡ {{ s.ebikes }} &nbsp; <font color="#8a96a8">🅿️ {{ s.docks }}</font>
+              {% endfor %}
+          # --- Nitehawk ---
+          - type: markdown
+            content: |
+              # <font color="#fb7185">🎬 Nitehawk</font>
+              <font color="#8a96a8">{{ state_attr('sensor.glance_nitehawk','label') }} ({{ state_attr('sensor.glance_nitehawk','date') }})</font>
+              {% for f in state_attr('sensor.glance_nitehawk','films') or [] -%}
+              **{{ f.title }}** &nbsp;
+              {%- for s in f.showtimes -%}
+              {% if s.status == 'sold_out' %} <font color="#5b6675">~~{{ s.time }}~~</font>{% else %} <font color="#cbd5e1">{{ s.time }}</font>{% endif %}
+              {%- endfor %}
+              {% else %}
+              _No showtimes left today_
+              {% endfor %}
+          # --- L train (placed at bottom — wasn't in either list) ---
+          - type: markdown
+            content: |
+              # <font color="#a7a9ac">🚇 L</font> <font color="#8a96a8">(Manhattan)</font>
+              # {{ state_attr('sensor.glance_l_train','manhattan') | join('&nbsp;&nbsp;·&nbsp;&nbsp;') }} <font color="#8a96a8">min</font>
+
+      # ============================= RIGHT COLUMN =============================
+      - type: grid
+        cards:
+          # --- Next Up ---
+          - type: markdown
+            content: |
+              # <font color="#c084fc">🗓️ Next Up</font>
+              {% set e = state_attr('sensor.glance_next_event','event') %}
+              {% if e %}
+              ### {{ e.summary }}
+              <font color="#8a96a8">{{ e.when }}{% if e.location %} · {{ e.location }}{% endif %}</font>
+              {% set cmap = {'green':'#4ade80','yellow':'#facc15','red':'#f87171'} %}
+              {% for m in state_attr('sensor.glance_next_event','modes') or [] -%}
+              - {{ m.mode }} &nbsp; <font color="{{ cmap[m.color] }}">**leave {{ m.leave_by }}**</font> <font color="#8a96a8">({{ m.mins }} min{% if m.leave_in_min >= 0 %}, in {{ m.leave_in_min }}{% else %} — now{% endif %})</font>
+              {% endfor %}
+              {% if not (state_attr('sensor.glance_next_event','modes')) and e.location %}<font color="#8a96a8">commute loading…</font>{% endif %}
+              {% else %}
+              _Nothing on the calendar_
+              {% endif %}
+          # --- Word ---
+          - type: markdown
+            content: |
+              # <font color="#f472b6">📖 Word</font>
+              ## {{ states('sensor.glance_word') }} <font color="#8a96a8">· {{ state_attr('sensor.glance_word','pos') }}</font>
+              {{ state_attr('sensor.glance_word','definition') }}
+          # --- Knicks ---
+          - type: markdown
+            content: |
+              # <font color="#ff7a45">🏀 Knicks</font>
+              {% for g in state_attr('sensor.glance_knicks','games') or [] -%}
+              {% if g.state == 'in' -%}
+              - <font color="#f87171">🔴 {{ g.score }}</font> <font color="#8a96a8">· {{ g.detail }}</font>
+              {% else -%}
+              - **{{ g.matchup }}** <font color="#8a96a8">· {{ g.detail }}</font>
+              {% endif %}
+              {%- else %}
+              _No upcoming game_
+              {% endfor %}
+          # --- NY Sports ---
+          - type: markdown
+            content: |
+              # <font color="#f59e0b">🗽 NY Sports</font>
+              {% for t in state_attr('sensor.glance_sports','teams') or [] -%}
+              {% if t.state == 'in' %}
+              - **{{ t.team }}** &nbsp; <font color="#f87171">🔴 {{ t.score or t.detail }}</font>
+              {% elif t.state == 'pre' %}
+              - **{{ t.team }}** &nbsp; {{ t.matchup }} <font color="#8a96a8">· {{ t.detail }}</font>
+              {% else %}
+              - **{{ t.team }}** &nbsp; <font color="#8a96a8">{{ t.detail }}</font>
+              {% endif %}
+              {% endfor %}
+          # --- Comedy ---
+          - type: markdown
+            content: |
+              # <font color="#fcd34d">🎤 Comedy</font>
+              {% for v in state_attr('sensor.glance_comedy','venues') or [] -%}
+              <font color="#8a96a8">**{{ v.venue }}**</font>
+              {% for s in v.shows -%}
+              - {{ s.title }} <font color="#8a96a8">· {{ s.time }}</font>
+              {% else %}
+              - <font color="#5b6675">no shows</font>
+              {% endfor %}
+              {% endfor %}
+          # --- Around Town ---
+          - type: markdown
+            content: |
+              # <font color="#a78bfa">📅 Around Town</font>
+              {% for e in (state_attr('sensor.glance_events','items') or [])[:5] -%}
+              - {{ e.emoji }} **{{ e.kind }}** <font color="#8a96a8">· {{ e.subject[:42] }}</font>
+              {% endfor %}

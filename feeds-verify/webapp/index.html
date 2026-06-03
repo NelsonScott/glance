@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Life Dashboard — Williamsburg</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  /* ============ TOKENS ============ */
+  :root{
+    --ink:        oklch(0.97 0.012 250);
+    --ink-dim:    oklch(0.80 0.02 255);
+    --ink-mute:   oklch(0.62 0.025 258);
+    --ink-faint:  oklch(0.50 0.025 260);
+
+    --glass-top:  rgba(255,255,255,0.072);
+    --glass-bot:  rgba(255,255,255,0.022);
+    --hairline:   rgba(255,255,255,0.10);
+    --hairline-2: rgba(255,255,255,0.055);
+
+    /* accents — shared chroma/lightness, varied hue */
+    --c-amber:  oklch(0.83 0.135 80);
+    --c-grey:   oklch(0.74 0.018 256);
+    --c-cyan:   oklch(0.80 0.115 215);
+    --c-green:  oklch(0.80 0.14 155);
+    --c-red:    oklch(0.70 0.20 22);
+    --c-orange: oklch(0.76 0.16 55);
+    --c-blue:   oklch(0.77 0.13 248);
+    --c-violet: oklch(0.74 0.15 305);
+    --c-yellow: oklch(0.86 0.13 100);
+    --c-indigo: oklch(0.74 0.14 277);
+    --c-pink:   oklch(0.77 0.16 350);
+
+    --st-ok:   oklch(0.80 0.15 152);
+    --st-warn: oklch(0.85 0.14 92);
+    --st-late: oklch(0.70 0.20 25);
+
+    --glow: 1;            /* multiplied by tweaks */
+    --radius: 26px;
+
+    /* aurora hues (mood tweak overrides these) */
+    --au1:250; --au2:290; --au3:315; --au4:225;
+    --au-base1:#131a4d; --au-base2:#0a0d33;
+  }
+
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html,body{ height:100%; overflow:hidden; }
+  body{
+    font-family:'Manrope', system-ui, sans-serif;
+    color:var(--ink);
+    background:#05061a;
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+  }
+
+  /* ============ AURORA BACKGROUND ============ */
+  .bg{ position:fixed; inset:0; overflow:hidden; z-index:0; background:
+        radial-gradient(120% 90% at 50% -10%, var(--au-base1) 0%, var(--au-base2) 38%, #06071e 70%, #040415 100%); }
+  .bg::before,.bg::after{ content:""; position:absolute; inset:-25%; }
+  .bg::before{
+    background:
+      radial-gradient(38% 42% at 18% 22%, oklch(0.55 0.20 var(--au1) / calc(0.55*var(--glow))), transparent 62%),
+      radial-gradient(40% 44% at 82% 30%, oklch(0.52 0.21 var(--au2) / calc(0.50*var(--glow))), transparent 60%),
+      radial-gradient(46% 50% at 70% 88%, oklch(0.50 0.22 var(--au3) / calc(0.48*var(--glow))), transparent 64%),
+      radial-gradient(36% 40% at 26% 82%, oklch(0.54 0.18 var(--au4) / calc(0.42*var(--glow))), transparent 60%);
+    filter:blur(40px) saturate(125%);
+    animation:drift 34s ease-in-out infinite alternate;
+  }
+  .bg::after{
+    background:
+      radial-gradient(30% 34% at 60% 16%, oklch(0.60 0.20 var(--au2) / calc(0.40*var(--glow))), transparent 60%),
+      radial-gradient(34% 38% at 12% 60%, oklch(0.52 0.20 var(--au3) / calc(0.36*var(--glow))), transparent 62%),
+      radial-gradient(30% 36% at 92% 70%, oklch(0.58 0.17 var(--au4) / calc(0.34*var(--glow))), transparent 60%);
+    filter:blur(55px) saturate(120%);
+    animation:drift2 46s ease-in-out infinite alternate;
+    mix-blend-mode:screen;
+  }
+  /* faint star/grain field */
+  .grain{ position:fixed; inset:0; z-index:1; pointer-events:none; opacity:0.5;
+    background-image:radial-gradient(rgba(255,255,255,0.5) 0.5px, transparent 0.6px);
+    background-size:3px 3px; mix-blend-mode:overlay; }
+  @keyframes drift{ from{ transform:translate3d(-2%,-1%,0) scale(1.02); } to{ transform:translate3d(3%,2%,0) scale(1.1); } }
+  @keyframes drift2{ from{ transform:translate3d(2%,1%,0) scale(1.05) rotate(0.5deg);} to{ transform:translate3d(-3%,-2%,0) scale(1.12) rotate(-0.5deg);} }
+
+  /* ============ STAGE / SCALE ============ */
+  #stage{
+    position:absolute; top:50%; left:50%;
+    width:1920px; height:1080px;
+    transform-origin:center center;
+    z-index:2;
+    display:flex; flex-direction:column;
+    padding:22px 30px 24px;
+    gap:16px;
+  }
+
+  /* ============ HEADER ============ */
+  .topbar{ display:flex; align-items:flex-end; justify-content:space-between; padding:2px 8px 0; }
+  .tb-left{ display:flex; align-items:baseline; gap:18px; }
+  .clock{ font-weight:800; font-size:56px; line-height:0.9; letter-spacing:-0.02em;
+    font-variant-numeric:tabular-nums; display:flex; align-items:baseline; gap:9px; }
+  .clock .ap{ font-size:22px; font-weight:600; color:var(--ink-dim); letter-spacing:0.04em; }
+  .greet{ font-size:17px; color:var(--ink-mute); font-weight:500; padding-bottom:7px; }
+  .greet b{ color:var(--ink-dim); font-weight:600; }
+  .tb-right{ text-align:right; display:flex; flex-direction:column; gap:5px; padding-bottom:4px; }
+  .tb-date{ font-family:'JetBrains Mono',monospace; font-size:14px; letter-spacing:0.18em; text-transform:uppercase; color:var(--ink-mute); }
+  .tb-loc{ display:flex; align-items:center; justify-content:flex-end; gap:8px; font-size:21px; font-weight:600; color:var(--ink); }
+  .tb-loc svg{ width:18px; height:18px; color:var(--c-pink); }
+
+  /* ============ GRID ============ */
+  .grid{
+    flex:1; min-height:0;
+    display:grid;
+    grid-template-columns:repeat(12,1fr);
+    grid-template-rows:repeat(6,1fr);
+    gap:14px;
+    grid-template-areas:
+      "cam cam cam cam cam cam next next next ltrn ltrn ltrn"
+      "cam cam cam cam cam cam next next next ferr ferr ferr"
+      "cam cam cam cam cam cam bike bike bike bike bike bike"
+      "wthr wthr wthr wthr wthr wthr knck knck knck nysp nysp nysp"
+      "wthr wthr wthr wthr wthr wthr nite nite nite cmdy cmdy cmdy"
+      "wthr wthr wthr wthr wthr wthr word word word town town town";
+  }
+
+  /* ============ GLASS TILE ============ */
+  .tile{
+    position:relative; overflow:hidden;
+    border-radius:var(--radius);
+    background:
+      linear-gradient(177deg, rgba(255,255,255,0.06), rgba(255,255,255,0.012)),
+      rgba(9,11,27,0.64);
+    border:1px solid rgba(255,255,255,0.12);
+    box-shadow:0 18px 50px -28px rgba(0,0,0,0.85), inset 0 1px 0 rgba(255,255,255,0.07);
+    backdrop-filter:blur(26px) saturate(135%);
+    -webkit-backdrop-filter:blur(26px) saturate(135%);
+    padding:14px 17px;
+    display:flex; flex-direction:column;
+    --accent:var(--ink-dim);
+  }
+  .tile.intro{ opacity:0; transform:translateY(14px) scale(0.99);
+    transition:opacity 0.7s cubic-bezier(.2,.7,.2,1), transform 0.7s cubic-bezier(.2,.7,.2,1);
+    transition-delay:calc(var(--i,0) * 50ms); }
+  .grid.ready .tile.intro{ opacity:1; transform:none; }
+  /* accent corner glow */
+  .tile::before{ content:""; position:absolute; top:-40%; right:-25%; width:60%; height:80%;
+    background:radial-gradient(circle, var(--accent), transparent 70%);
+    opacity:calc(0.16*var(--glow)); pointer-events:none; filter:blur(8px); }
+  /* tile head */
+  .head{ display:flex; align-items:center; gap:9px; margin-bottom:8px; flex:none; }
+  .head .lbl{ font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:600;
+    letter-spacing:0.16em; text-transform:uppercase; color:var(--ink-mute); }
+  .head .sub{ margin-left:auto; font-family:'JetBrains Mono',monospace; font-size:12px;
+    letter-spacing:0.08em; color:var(--ink-faint); }
+  .dot{ width:9px; height:9px; border-radius:50%; background:var(--accent);
+    box-shadow:0 0 12px var(--accent); flex:none; }
+  .chip-ic{ width:24px; height:24px; border-radius:7px; display:grid; place-items:center;
+    background:color-mix(in oklab, var(--accent) 22%, transparent);
+    border:1px solid color-mix(in oklab, var(--accent) 40%, transparent); flex:none; }
+  .chip-ic svg{ width:15px; height:15px; color:var(--accent); }
+  .roundel{ width:26px; height:26px; border-radius:50%; display:grid; place-items:center;
+    background:var(--accent); color:#0a0a12; font-weight:800; font-size:15px; flex:none;
+    box-shadow:0 0 16px color-mix(in oklab,var(--accent) 60%, transparent); }
+
+  svg.icon{ fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+
+  /* ============ AREAS ============ */
+  .cam{ grid-area:cam; padding:0; }
+  .wthr{ grid-area:wthr; }
+  .next{ grid-area:next; }
+  .ltrn{ grid-area:ltrn; }
+  .ferr{ grid-area:ferr; }
+  .bike{ grid-area:bike; }
+  .knck{ grid-area:knck; }
+  .nysp{ grid-area:nysp; }
+  .nite{ grid-area:nite; }
+  .cmdy{ grid-area:cmdy; }
+  .word{ grid-area:word; }
+  .town{ grid-area:town; }
+
+  /* ============ LIVE CAM ============ */
+  .cam{ --accent:var(--c-red); }
+  .cam-stage{ position:absolute; inset:0; }
+  .feed{ position:absolute; inset:0; opacity:0; transition:opacity 1.4s ease; }
+  .feed.on{ opacity:1; }
+  .feed .sky{ position:absolute; inset:0; }
+  .feed.times .sky{ background:
+      radial-gradient(80% 60% at 50% 110%, #ff7a3c 0%, transparent 55%),
+      radial-gradient(50% 40% at 20% 80%, oklch(0.6 0.2 30/0.7), transparent 60%),
+      radial-gradient(60% 45% at 85% 75%, oklch(0.6 0.18 60/0.6), transparent 60%),
+      linear-gradient(180deg, #1a1230 0%, #2a1838 45%, #3a1c2e 100%); }
+  .feed.shib .sky{ background:
+      radial-gradient(70% 55% at 50% 108%, oklch(0.62 0.22 300/0.8) 0%, transparent 55%),
+      radial-gradient(50% 40% at 22% 78%, oklch(0.62 0.2 250/0.7), transparent 60%),
+      radial-gradient(55% 42% at 84% 72%, oklch(0.66 0.2 200/0.6), transparent 60%),
+      linear-gradient(180deg, #0a1233 0%, #131a45 50%, #1a1240 100%); }
+  /* moving "billboard" light blobs */
+  .blob{ position:absolute; border-radius:50%; filter:blur(26px); mix-blend-mode:screen; opacity:0.85; }
+  .feed.times .b1{ width:240px; height:200px; left:8%; top:30%; background:oklch(0.7 0.22 25); animation:float1 16s ease-in-out infinite; }
+  .feed.times .b2{ width:300px; height:240px; right:6%; top:18%; background:oklch(0.78 0.18 70); animation:float2 19s ease-in-out infinite; }
+  .feed.times .b3{ width:200px; height:180px; left:42%; bottom:8%; background:oklch(0.7 0.2 340); animation:float3 22s ease-in-out infinite; }
+  .feed.shib .b1{ width:240px; height:210px; left:10%; top:26%; background:oklch(0.72 0.2 300); animation:float1 17s ease-in-out infinite; }
+  .feed.shib .b2{ width:300px; height:250px; right:8%; top:20%; background:oklch(0.75 0.18 200); animation:float2 21s ease-in-out infinite; }
+  .feed.shib .b3{ width:210px; height:190px; left:40%; bottom:6%; background:oklch(0.72 0.2 260); animation:float3 24s ease-in-out infinite; }
+  @keyframes float1{ 50%{ transform:translate(40px,-22px) scale(1.12);} }
+  @keyframes float2{ 50%{ transform:translate(-50px,18px) scale(1.08);} }
+  @keyframes float3{ 50%{ transform:translate(30px,-26px) scale(1.14);} }
+  /* skyline silhouette via layered bars */
+  .skyline{ position:absolute; left:0; right:0; bottom:0; height:46%;
+    background:linear-gradient(180deg, transparent, rgba(0,0,0,0.55));
+    -webkit-mask:linear-gradient(180deg,transparent,#000 38%); mask:linear-gradient(180deg,transparent,#000 38%); }
+  .skyline::before{ content:""; position:absolute; bottom:0; left:0; right:0; height:70%;
+    background:
+      repeating-linear-gradient(90deg, rgba(0,0,0,0.7) 0 38px, rgba(0,0,0,0.45) 38px 70px, rgba(0,0,0,0.78) 70px 120px, rgba(0,0,0,0.5) 120px 150px);
+    -webkit-mask:linear-gradient(180deg, transparent, #000 60%); mask:linear-gradient(180deg, transparent, #000 60%); }
+  /* tiny window lights */
+  .windows{ position:absolute; left:0; right:0; bottom:0; height:42%; opacity:0.5;
+    background-image:radial-gradient(rgba(255,220,160,0.9) 1px, transparent 1.6px);
+    background-size:14px 16px; mix-blend-mode:screen;
+    -webkit-mask:linear-gradient(180deg, transparent 10%, #000 80%); mask:linear-gradient(180deg, transparent 10%, #000 80%); }
+  .scan{ position:absolute; inset:0; pointer-events:none; opacity:0.10;
+    background:repeating-linear-gradient(180deg, rgba(255,255,255,0.5) 0 1px, transparent 1px 3px); }
+  .vig{ position:absolute; inset:0; pointer-events:none;
+    box-shadow:inset 0 0 140px 30px rgba(0,0,0,0.6); border-radius:var(--radius); }
+  .cam-overlay{ position:absolute; inset:0; z-index:3; padding:20px 22px; display:flex; flex-direction:column; justify-content:space-between; }
+  .cam-top{ display:flex; align-items:flex-start; justify-content:space-between; }
+  .live-badge{ display:flex; align-items:center; gap:8px; padding:7px 13px; border-radius:999px;
+    background:rgba(8,8,16,0.5); border:1px solid rgba(255,255,255,0.14); backdrop-filter:blur(8px);
+    font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:600; letter-spacing:0.18em; }
+  .live-dot{ width:9px; height:9px; border-radius:50%; background:var(--c-red); box-shadow:0 0 12px var(--c-red); animation:pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse{ 50%{ opacity:0.35; } }
+  .cam-rotor{ font-family:'JetBrains Mono',monospace; font-size:12px; letter-spacing:0.12em; color:var(--ink-dim);
+    background:rgba(8,8,16,0.45); padding:6px 11px; border-radius:999px; border:1px solid rgba(255,255,255,0.1); }
+  .cam-bottom{ display:flex; align-items:flex-end; justify-content:space-between; }
+  .cam-place{ font-size:30px; font-weight:800; letter-spacing:-0.01em; text-shadow:0 2px 18px rgba(0,0,0,0.6); }
+  .cam-place small{ display:block; font-size:14px; font-weight:500; letter-spacing:0.1em; color:var(--ink-dim); margin-top:3px; }
+  .cam-time{ font-family:'JetBrains Mono',monospace; font-size:30px; font-weight:600; font-variant-numeric:tabular-nums; text-shadow:0 2px 18px rgba(0,0,0,0.6); }
+  .cam-time small{ display:block; text-align:right; font-size:12px; letter-spacing:0.12em; color:var(--ink-mute); margin-top:3px; }
+  .rotor-dots{ display:flex; gap:6px; margin-top:8px; justify-content:flex-end; }
+  .rotor-dots i{ width:7px; height:7px; border-radius:50%; background:rgba(255,255,255,0.25); }
+  .rotor-dots i.on{ background:#fff; }
+
+  /* ============ WEATHER ============ */
+  .wthr{ --accent:var(--c-amber); }
+  .wx-main{ display:flex; gap:26px; flex:1; min-height:0; }
+  .wx-now{ display:flex; flex-direction:column; justify-content:center; min-width:300px; }
+  .wx-cond{ display:flex; align-items:center; gap:18px; }
+  .wx-cond svg{ width:74px; height:74px; color:var(--c-amber); filter:drop-shadow(0 0 20px color-mix(in oklab,var(--c-amber) 55%, transparent)); }
+  .wx-temp{ font-size:96px; font-weight:800; line-height:0.85; letter-spacing:-0.03em; font-variant-numeric:tabular-nums; }
+  .wx-temp .deg{ font-size:46px; font-weight:600; vertical-align:top; color:var(--ink-dim); }
+  .wx-desc{ font-size:26px; font-weight:600; margin-top:14px; }
+  .wx-feels{ font-size:17px; color:var(--ink-mute); margin-top:4px; }
+  .wx-side{ flex:1; display:flex; flex-direction:column; justify-content:center; gap:14px; border-left:1px solid var(--hairline-2); padding-left:26px; }
+  .wx-stats{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px 18px; }
+  .wx-stat{ display:flex; align-items:center; gap:11px; }
+  .wx-stat svg{ width:22px; height:22px; color:var(--ink-mute); flex:none; }
+  .wx-stat .v{ font-size:21px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .wx-stat .k{ font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:var(--ink-faint); }
+  .aqi-pill{ display:inline-block; padding:1px 8px; border-radius:6px; font-size:13px; font-weight:700;
+    background:color-mix(in oklab, var(--c-yellow) 24%, transparent); color:var(--c-yellow); }
+  .wx-fc{ display:flex; gap:10px; flex:none; margin-top:16px; }
+  .fc{ flex:1; background:rgba(255,255,255,0.04); border:1px solid var(--hairline-2); border-radius:16px;
+    padding:13px 10px; display:flex; flex-direction:column; align-items:center; gap:8px; }
+  .fc .d{ font-family:'JetBrains Mono',monospace; font-size:12px; letter-spacing:0.12em; color:var(--ink-mute); text-transform:uppercase; }
+  .fc svg{ width:30px; height:30px; }
+  .fc .hi{ font-size:19px; font-weight:700; }
+  .fc .lo{ font-size:15px; color:var(--ink-mute); font-weight:600; }
+  .fc .t{ display:flex; gap:8px; align-items:baseline; }
+
+  /* ============ NEXT UP ============ */
+  .next{ --accent:var(--st-ok); }
+  .nu-event{ flex:none; margin-bottom:10px; }
+  .nu-when{ font-family:'JetBrains Mono',monospace; font-size:12px; letter-spacing:0.1em; color:var(--st-ok); margin-bottom:3px; }
+  .nu-title{ font-size:27px; font-weight:800; letter-spacing:-0.01em; line-height:1.05; }
+  .nu-meta{ font-size:14px; color:var(--ink-mute); margin-top:2px; }
+  .nu-modes{ display:flex; flex-direction:column; gap:8px; flex:1; justify-content:center; }
+  .mode{ display:flex; align-items:center; gap:12px; padding:9px 13px; border-radius:13px;
+    white-space:nowrap;
+    background:rgba(255,255,255,0.035); border:1px solid var(--hairline-2);
+    border-left:3px solid var(--ms); }
+  .mode .mi{ width:23px; height:23px; color:var(--ink-dim); flex:none; }
+  .mode .mname{ font-size:16px; font-weight:700; width:60px; flex:none; }
+  .mode .mride{ font-size:13px; color:var(--ink-mute); flex:1; overflow:hidden; text-overflow:ellipsis; }
+  .mode .mleave{ text-align:right; flex:none; }
+  .mode .mleave .lv{ font-size:16px; font-weight:700; font-variant-numeric:tabular-nums; color:var(--ms); }
+  .mode .mleave .lk{ font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:0.08em; text-transform:uppercase; color:var(--ink-faint); }
+  .mode.ok{ --ms:var(--st-ok); } .mode.warn{ --ms:var(--st-warn); } .mode.late{ --ms:var(--st-late); }
+
+  /* ============ L TRAIN ============ */
+  .ltrn{ --accent:var(--c-grey); }
+  .ltrn .roundel{ color:#fff; }
+  .ltrn-body{ display:flex; align-items:center; gap:18px; flex:1; }
+  .l-next{ display:flex; align-items:baseline; gap:6px; }
+  .l-next .n{ font-size:62px; font-weight:800; line-height:0.85; font-variant-numeric:tabular-nums; }
+  .l-next .u{ font-size:18px; color:var(--ink-mute); font-weight:600; }
+  .l-rest{ display:flex; gap:9px; flex-wrap:wrap; flex:1; }
+  .l-rest .pill{ font-family:'JetBrains Mono',monospace; font-size:16px; font-weight:600; padding:7px 12px; border-radius:11px;
+    background:rgba(255,255,255,0.06); border:1px solid var(--hairline-2); font-variant-numeric:tabular-nums; }
+  .l-rest .pill small{ color:var(--ink-faint); font-size:11px; }
+
+  /* ============ FERRY ============ */
+  .ferr{ --accent:var(--c-cyan); }
+  .fr-body{ display:flex; align-items:center; gap:16px; flex:1; }
+  .fr-times{ display:flex; gap:10px; align-items:baseline; }
+  .fr-times .t1{ font-size:38px; font-weight:800; font-variant-numeric:tabular-nums; line-height:0.9; }
+  .fr-times .t1 .ap{ font-size:17px; color:var(--ink-mute); font-weight:600; }
+  .fr-times .t2{ font-family:'JetBrains Mono',monospace; font-size:18px; color:var(--ink-dim); font-weight:600; padding:5px 11px; border-radius:10px; background:rgba(255,255,255,0.06); border:1px solid var(--hairline-2); }
+  .fr-last{ margin-left:auto; text-align:right; }
+  .fr-last .v{ font-size:18px; font-weight:700; color:var(--c-cyan); font-variant-numeric:tabular-nums; }
+  .fr-last .k{ font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:0.12em; text-transform:uppercase; color:var(--ink-faint); }
+
+  /* ============ CITI BIKE ============ */
+  .bike{ --accent:var(--c-green); }
+  .cb-row{ display:flex; gap:12px; flex:1; }
+  .cb-st{ flex:1; background:rgba(255,255,255,0.035); border:1px solid var(--hairline-2); border-radius:15px;
+    padding:9px 12px; display:flex; flex-direction:column; justify-content:center; gap:5px; }
+  .cb-name{ font-size:14px; font-weight:700; line-height:1.18; }
+  .cb-name small{ display:block; font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:0.1em; color:var(--ink-faint); font-weight:500; margin-top:2px; text-transform:uppercase; }
+  .cb-counts{ display:flex; gap:16px; }
+  .cb-c{ display:flex; flex-direction:column; }
+  .cb-c .n{ font-size:21px; font-weight:800; font-variant-numeric:tabular-nums; line-height:1; display:flex; align-items:center; gap:4px; }
+  .cb-c .n svg{ width:15px; height:15px; }
+  .cb-c .l{ font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:0.1em; text-transform:uppercase; color:var(--ink-faint); margin-top:3px; }
+  .cb-c.ebk .n{ color:var(--c-green); }
+  .cb-c.low .n{ color:var(--st-late); }
+
+  /* ============ SPORTS / ENTERTAINMENT shared list ============ */
+  .knck{ --accent:var(--c-orange); }
+  .nysp{ --accent:var(--c-blue); }
+  .nite{ --accent:var(--c-violet); }
+  .cmdy{ --accent:var(--c-yellow); }
+  .town{ --accent:var(--c-pink); }
+  .word{ --accent:var(--c-indigo); }
+
+  .rows{ display:flex; flex-direction:column; flex:1; justify-content:center; }
+  .row{ display:flex; align-items:center; gap:11px; padding:5px 0; }
+  .row + .row{ border-top:1px solid var(--hairline-2); }
+  .row .who{ font-size:16px; font-weight:700; flex:none; }
+  .row .vs{ font-size:14px; color:var(--ink-mute); font-weight:500; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .row .vs b{ color:var(--ink-dim); font-weight:600; }
+  .row .when{ font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--ink-dim); text-align:right; flex:none; font-variant-numeric:tabular-nums; letter-spacing:0.02em; line-height:1.25; }
+  .row .when b{ color:var(--accent); display:block; font-size:13px; }
+  .teamdot{ width:9px; height:9px; border-radius:50%; flex:none; }
+
+  /* NY Sports — horizontal teams */
+  .sp-grid{ display:flex; gap:10px; flex:1; }
+  .sp-team{ flex:1; background:rgba(255,255,255,0.035); border:1px solid var(--hairline-2); border-radius:14px;
+    padding:10px 12px; display:flex; flex-direction:column; gap:5px; justify-content:center; min-width:0; }
+  .sp-team .tm{ font-size:15px; font-weight:800; display:flex; align-items:center; gap:7px; }
+  .sp-team .tm i{ width:8px; height:8px; border-radius:50%; flex:none; }
+  .sp-team .op{ font-size:12px; color:var(--ink-mute); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .sp-team .tt{ font-family:'JetBrains Mono',monospace; font-size:12.5px; font-weight:700; color:var(--c-blue); font-variant-numeric:tabular-nums; }
+
+  /* nitehawk / comedy variants */
+  .bill .row .who{ width:auto; }
+  .bill .row{ padding:3px 0; }
+  .bill .row .title{ font-size:14px; font-weight:700; flex:1; line-height:1.05; overflow:hidden; }
+  .bill .row .title small{ display:block; font-size:11px; color:var(--ink-mute); font-weight:500; margin-top:1px; }
+  .bill .row .times{ display:flex; gap:6px; flex:none; }
+  .bill .row .times span{ font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:600; padding:4px 8px; border-radius:8px;
+    background:color-mix(in oklab,var(--accent) 16%, transparent); color:var(--accent); font-variant-numeric:tabular-nums; }
+
+  /* ============ WORD OF THE DAY ============ */
+  .word .wd-body{ flex:1; display:flex; flex-direction:column; justify-content:center; }
+  .wd-word{ font-size:25px; font-weight:800; letter-spacing:-0.01em; display:flex; align-items:baseline; gap:10px; }
+  .wd-word .pos{ font-size:14px; font-style:italic; color:var(--c-indigo); font-weight:600; }
+  .wd-ipa{ font-family:'JetBrains Mono',monospace; font-size:13px; color:var(--ink-mute); margin-top:2px; }
+  .wd-def{ font-size:13.5px; color:var(--ink-dim); line-height:1.3; margin-top:4px; text-wrap:pretty;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+
+  /* ============ AROUND TOWN ============ */
+  .town .at-row{ display:flex; align-items:center; gap:11px; padding:4px 0; }
+  .town .at-row + .at-row{ border-top:1px solid var(--hairline-2); }
+  .at-when{ font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:600; letter-spacing:0.03em; color:var(--c-pink);
+    width:66px; flex:none; }
+  .at-name{ font-size:15px; font-weight:600; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .at-name small{ color:var(--ink-mute); font-weight:500; }
+
+  /* ============ TWEAKS MOUNT ============ */
+  #tweaks-root{ position:fixed; z-index:50; }
+</style>
+</head>
+<body>
+<!-- icon sprite -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <g id="i-sun"><circle cx="12" cy="12" r="4.2"/><line x1="12" y1="2" x2="12" y2="4.3"/><line x1="12" y1="19.7" x2="12" y2="22"/><line x1="2" y1="12" x2="4.3" y2="12"/><line x1="19.7" y1="12" x2="22" y2="12"/><line x1="4.9" y1="4.9" x2="6.5" y2="6.5"/><line x1="17.5" y1="17.5" x2="19.1" y2="19.1"/><line x1="4.9" y1="19.1" x2="6.5" y2="17.5"/><line x1="17.5" y1="6.5" x2="19.1" y2="4.9"/></g>
+    <g id="i-cloud"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></g>
+    <g id="i-partly"><circle cx="7" cy="7" r="3"/><line x1="7" y1="1.8" x2="7" y2="3"/><line x1="1.8" y1="7" x2="3" y2="7"/><line x1="3.3" y1="3.3" x2="4.2" y2="4.2"/><path d="M18 12.5h-1.1A6.5 6.5 0 1 0 8 21h10a4.3 4.3 0 0 0 0-8.5z"/></g>
+    <g id="i-rain"><line x1="8" y1="18.5" x2="7" y2="21.5"/><line x1="12" y1="18.5" x2="11" y2="22"/><line x1="16" y1="18.5" x2="15" y2="21.5"/><path d="M19 16.6A5 5 0 0 0 18 7h-1.26A8 8 0 1 0 5 15.3"/></g>
+    <g id="i-wind"><path d="M9.6 4.6A2 2 0 1 1 11 8H2"/><path d="M12.6 19.4A2 2 0 1 0 14 16H2"/><path d="M17.7 7.7A2.5 2.5 0 1 1 19.5 12H2"/></g>
+    <g id="i-drop"><path d="M12 2.7l5.7 5.7a8 8 0 1 1-11.4 0z"/></g>
+    <g id="i-gauge"><circle cx="12" cy="12" r="9"/><path d="M12 12l4-2.5"/></g>
+    <g id="i-rise"><path d="M17 18a5 5 0 0 0-10 0"/><line x1="12" y1="3" x2="12" y2="9"/><line x1="2" y1="18" x2="4" y2="18"/><line x1="20" y1="18" x2="22" y2="18"/><line x1="22" y1="22" x2="2" y2="22"/><polyline points="9 6 12 3 15 6"/></g>
+    <g id="i-set"><path d="M17 18a5 5 0 0 0-10 0"/><line x1="12" y1="9" x2="12" y2="3"/><line x1="2" y1="18" x2="4" y2="18"/><line x1="20" y1="18" x2="22" y2="18"/><line x1="22" y1="22" x2="2" y2="22"/><polyline points="9 6 12 9 15 6"/></g>
+    <g id="i-train"><rect x="5" y="3" width="14" height="13" rx="3"/><line x1="5" y1="9" x2="19" y2="9"/><line x1="9.5" y1="3" x2="9.5" y2="9"/><circle cx="9" cy="12.6" r="0.8"/><circle cx="15" cy="12.6" r="0.8"/><line x1="7.5" y1="16" x2="6" y2="20"/><line x1="16.5" y1="16" x2="18" y2="20"/></g>
+    <g id="i-car"><path d="M5 12.5l1.4-4.1A2 2 0 0 1 8.3 7h7.4a2 2 0 0 1 1.9 1.4L19 12.5"/><path d="M4 12.5h16v4.5a1 1 0 0 1-1 1h-1.5a1 1 0 0 1-1-1v-1H7.5v1a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><circle cx="7.5" cy="14.6" r="0.6"/><circle cx="16.5" cy="14.6" r="0.6"/></g>
+    <g id="i-bike"><circle cx="5.8" cy="17" r="3.4"/><circle cx="18.2" cy="17" r="3.4"/><path d="M5.8 17l3.6-7.6h5.2"/><path d="M9.4 9.4L12 17"/><circle cx="14.6" cy="6.4" r="1"/><line x1="12" y1="17" x2="15.5" y2="9.4"/></g>
+    <g id="i-bolt"><path d="M13 2.5L5 13h5.5l-1 8.5L19 11h-5.5z"/></g>
+    <g id="i-boat"><path d="M4 16.5h16l-2.4 4.2H6.4z"/><path d="M6 16.5V9.5a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v7"/><line x1="9" y1="8.5" x2="9" y2="5.5"/><line x1="15" y1="8.5" x2="15" y2="5.5"/><line x1="12" y1="12" x2="12" y2="16.5"/></g>
+    <g id="i-ticket"><path d="M4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2 2 2 0 0 0 0 4 2 2 0 0 1-2 2H6a2 2 0 0 1-2-2 2 2 0 0 0 0-4z"/><line x1="14" y1="6.5" x2="14" y2="15.5" stroke-dasharray="2 2"/></g>
+    <g id="i-mic"><rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></g>
+    <g id="i-book"><path d="M4 5.5A2 2 0 0 1 6 3.5h13v15H6.5a2.5 2.5 0 0 0-2.5 2.5z"/><path d="M4 5.5V21"/></g>
+    <g id="i-pin"><path d="M12 21s-6-5.7-6-10.5a6 6 0 0 1 12 0C18 15.3 12 21 12 21z"/><circle cx="12" cy="10.5" r="2.2"/></g>
+  </defs>
+</svg>
+
+<div class="bg"></div>
+<div class="grain"></div>
+
+<div id="stage" data-screen-label="Dashboard">
+  <header class="topbar">
+    <div class="tb-left">
+      <div class="clock"><span id="clk-time">5:48</span><span class="ap" id="clk-ap">PM</span></div>
+      <div class="greet"><b id="greet">Good evening</b> — here's your day at a glance.</div>
+    </div>
+    <div class="tb-right">
+      <div class="tb-date" id="date">Tuesday · June 2, 2026</div>
+      <div class="tb-loc"><svg class="icon" viewBox="0 0 24 24"><use href="#i-pin"/></svg>Williamsburg, Brooklyn</div>
+    </div>
+  </header>
+
+  <main class="grid">
+
+    <!-- LIVE CAM -->
+    <section class="tile cam" style="--i:0">
+      <div class="cam-stage">
+        <iframe id="cam-frame" frameborder="0"
+                allow="autoplay; encrypted-media; picture-in-picture"
+                style="position:absolute; inset:0; width:100%; height:100%; border:0;"></iframe>
+        <div class="vig"></div>
+      </div>
+      <div class="cam-overlay" style="pointer-events:none;">
+        <div class="cam-top">
+          <div class="live-badge"><span class="live-dot"></span>LIVE</div>
+          <div class="cam-rotor">CITY CAM · ROTATING</div>
+        </div>
+        <div class="cam-bottom">
+          <div class="cam-place" id="cam-place"></div>
+          <div class="rotor-dots" id="rotor-dots" style="pointer-events:auto;"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- WEATHER -->
+    <section class="tile wthr" style="--i:3">
+      <div class="head"><span class="dot"></span><span class="lbl">Weather</span><span class="sub">Williamsburg · now</span></div>
+      <div class="wx-main">
+        <div class="wx-now">
+          <div class="wx-cond">
+            <svg class="icon" viewBox="0 0 24 24"><use href="#i-sun"/></svg>
+            <div class="wx-temp"><span data-f="73">73</span><span class="deg unit">°F</span></div>
+          </div>
+          <div class="wx-desc">Clear skies</div>
+          <div class="wx-feels">Feels like <span data-f="72">72</span>° · High <span data-f="78">78</span>° / Low <span data-f="64">64</span>°</div>
+        </div>
+        <div class="wx-side">
+          <div class="wx-stats">
+            <div class="wx-stat"><svg class="icon" viewBox="0 0 24 24"><use href="#i-drop"/></svg><div><div class="v">33%</div><div class="k">Humidity</div></div></div>
+            <div class="wx-stat"><svg class="icon" viewBox="0 0 24 24"><use href="#i-wind"/></svg><div><div class="v">7 mph</div><div class="k">Wind · SW</div></div></div>
+            <div class="wx-stat"><svg class="icon" viewBox="0 0 24 24"><use href="#i-gauge"/></svg><div><div class="v"><span class="aqi-pill">AQI 55</span></div><div class="k">Moderate</div></div></div>
+            <div class="wx-stat"><svg class="icon" viewBox="0 0 24 24"><use href="#i-rise"/></svg><div><div class="v">5:26a</div><div class="k">Sunrise</div></div></div>
+            <div class="wx-stat"><svg class="icon" viewBox="0 0 24 24"><use href="#i-set"/></svg><div><div class="v">8:21p</div><div class="k">Sunset</div></div></div>
+            <div class="wx-stat"><svg class="icon" viewBox="0 0 24 24"><use href="#i-sun"/></svg><div><div class="v">6 <span style="font-size:13px;color:var(--ink-mute);font-weight:600">High</span></div><div class="k">UV Index</div></div></div>
+          </div>
+          <div class="wx-fc">
+            <div class="fc"><span class="d">Wed</span><svg class="icon" viewBox="0 0 24 24" style="color:var(--c-amber)"><use href="#i-sun"/></svg><div class="t"><span class="hi"><span data-f="78">78</span>°</span><span class="lo"><span data-f="64">64</span>°</span></div></div>
+            <div class="fc"><span class="d">Thu</span><svg class="icon" viewBox="0 0 24 24" style="color:var(--ink-dim)"><use href="#i-partly"/></svg><div class="t"><span class="hi"><span data-f="75">75</span>°</span><span class="lo"><span data-f="61">61</span>°</span></div></div>
+            <div class="fc"><span class="d">Fri</span><svg class="icon" viewBox="0 0 24 24" style="color:var(--c-cyan)"><use href="#i-rain"/></svg><div class="t"><span class="hi"><span data-f="70">70</span>°</span><span class="lo"><span data-f="59">59</span>°</span></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- NEXT UP -->
+    <section class="tile next" style="--i:1">
+      <div class="head"><span class="dot"></span><span class="lbl">Next Up</span><span class="sub" id="nu-eta">in 1h 42m</span></div>
+      <div class="nu-event">
+        <div class="nu-when" id="nu-when">Today · 7:30 PM</div>
+        <div class="nu-title">Dinner at Lilia</div>
+        <div class="nu-meta">567 Union Ave · table for 4</div>
+      </div>
+      <div class="nu-modes" id="nu-modes">
+        <div class="mode ok">
+          <svg class="icon mi" viewBox="0 0 24 24"><use href="#i-train"/></svg>
+          <span class="mname">Train</span><span class="mride">G → 24 min ride</span>
+          <span class="mleave"><span class="lv" data-off="32">leave 6:58</span><span class="lk">comfortable</span></span>
+        </div>
+        <div class="mode warn">
+          <svg class="icon mi" viewBox="0 0 24 24"><use href="#i-car"/></svg>
+          <span class="mname">Uber</span><span class="mride">~$18 · 16 min · light surge</span>
+          <span class="mleave"><span class="lv" data-off="21">leave 7:06</span><span class="lk">soon</span></span>
+        </div>
+        <div class="mode late">
+          <svg class="icon mi" viewBox="0 0 24 24"><use href="#i-bike"/></svg>
+          <span class="mname">E-bike</span><span class="mride">13 min · rain after 8</span>
+          <span class="mleave"><span class="lv" data-off="16">leave 7:11</span><span class="lk">leave now-ish</span></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- L TRAIN -->
+    <section class="tile ltrn" style="--i:2">
+      <div class="head"><span class="roundel">L</span><span class="lbl">L → Manhattan</span><span class="sub">Bedford Av</span></div>
+      <div class="ltrn-body">
+        <div class="l-next"><span class="n" id="l-next">3</span><span class="u">min</span></div>
+        <div class="l-rest" id="l-rest"></div>
+      </div>
+    </section>
+
+    <!-- FERRY -->
+    <section class="tile ferr" style="--i:4">
+      <div class="head"><span class="chip-ic"><svg class="icon" viewBox="0 0 24 24"><use href="#i-boat"/></svg></span><span class="lbl">NYC Ferry · N. Williamsburg</span></div>
+      <div class="fr-body">
+        <div class="fr-times">
+          <span class="t1">11:26<span class="ap">am</span></span>
+          <span class="t2">11:38a</span>
+        </div>
+        <div class="fr-last"><div class="v">9:43p</div><div class="k">Last ferry</div></div>
+      </div>
+    </section>
+
+    <!-- CITI BIKE -->
+    <section class="tile bike" style="--i:5">
+      <div class="head"><span class="chip-ic"><svg class="icon" viewBox="0 0 24 24"><use href="#i-bike"/></svg></span><span class="lbl">Citi Bike · nearby</span><span class="sub">3 stations</span></div>
+      <div class="cb-row">
+        <div class="cb-st">
+          <div class="cb-name">Bedford Av &amp; N 8 St<small>0.1 mi</small></div>
+          <div class="cb-counts">
+            <div class="cb-c"><span class="n">4</span><span class="l">Bikes</span></div>
+            <div class="cb-c ebk"><span class="n"><svg class="icon" viewBox="0 0 24 24"><use href="#i-bolt"/></svg>6</span><span class="l">E-bikes</span></div>
+            <div class="cb-c"><span class="n">12</span><span class="l">Docks</span></div>
+          </div>
+        </div>
+        <div class="cb-st">
+          <div class="cb-name">Berry St &amp; N 8 St<small>0.2 mi</small></div>
+          <div class="cb-counts">
+            <div class="cb-c low"><span class="n">1</span><span class="l">Bikes</span></div>
+            <div class="cb-c ebk"><span class="n"><svg class="icon" viewBox="0 0 24 24"><use href="#i-bolt"/></svg>2</span><span class="l">E-bikes</span></div>
+            <div class="cb-c"><span class="n">18</span><span class="l">Docks</span></div>
+          </div>
+        </div>
+        <div class="cb-st">
+          <div class="cb-name">Driggs Av &amp; Lorimer<small>0.3 mi</small></div>
+          <div class="cb-counts">
+            <div class="cb-c"><span class="n">7</span><span class="l">Bikes</span></div>
+            <div class="cb-c ebk"><span class="n"><svg class="icon" viewBox="0 0 24 24"><use href="#i-bolt"/></svg>3</span><span class="l">E-bikes</span></div>
+            <div class="cb-c low"><span class="n">5</span><span class="l">Docks</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- KNICKS -->
+    <section class="tile knck" style="--i:6">
+      <div class="head"><span class="dot"></span><span class="lbl">Knicks</span><span class="sub">next 2</span></div>
+      <div class="rows">
+        <div class="row"><span class="teamdot" style="background:var(--c-orange)"></span><span class="vs"><b>vs</b> Boston Celtics</span><span class="when"><b>Wed Jun 3</b>7:30p · MSG</span></div>
+        <div class="row"><span class="teamdot" style="background:var(--ink-mute)"></span><span class="vs"><b>@</b> Miami Heat</span><span class="when"><b>Sat Jun 6</b>8:00p · away</span></div>
+      </div>
+    </section>
+
+    <!-- NY SPORTS -->
+    <section class="tile nysp" style="--i:7">
+      <div class="head"><span class="dot"></span><span class="lbl">NY Sports</span></div>
+      <div class="rows">
+        <div class="sp-grid">
+          <div class="sp-team"><span class="tm"><i style="background:var(--c-blue)"></i>Yankees</span><span class="op">vs Red Sox</span><span class="tt">Tonight 7:05p</span></div>
+          <div class="sp-team"><span class="tm"><i style="background:var(--c-orange)"></i>Mets</span><span class="op">@ Braves</span><span class="tt">Tonight 7:20p</span></div>
+          <div class="sp-team"><span class="tm"><i style="background:var(--c-cyan)"></i>Rangers</span><span class="op">vs Devils</span><span class="tt">Oct 9 · pre</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- NITEHAWK -->
+    <section class="tile nite" style="--i:8">
+      <div class="head"><span class="chip-ic"><svg class="icon" viewBox="0 0 24 24"><use href="#i-ticket"/></svg></span><span class="lbl">Nitehawk · Williamsburg</span></div>
+      <div class="rows bill">
+        <div class="row"><div class="title">Dune: Part Two</div><div class="times"><span>6:40p</span><span>9:20p</span></div></div>
+        <div class="row"><div class="title">Perfect Days</div><div class="times"><span>7:10p</span></div></div>
+        <div class="row"><div class="title">The Zone of Interest</div><div class="times"><span>10:00p</span></div></div>
+      </div>
+    </section>
+
+    <!-- COMEDY -->
+    <section class="tile cmdy" style="--i:9">
+      <div class="head"><span class="chip-ic"><svg class="icon" viewBox="0 0 24 24"><use href="#i-mic"/></svg></span><span class="lbl">Comedy · tonight</span></div>
+      <div class="rows bill">
+        <div class="row"><div class="title">The Flop House Live<small>The Bell House</small></div><div class="times"><span>8:00p</span></div></div>
+        <div class="row"><div class="title">Improv All-Stars<small>Second City Brooklyn</small></div><div class="times"><span>9:30p</span></div></div>
+      </div>
+    </section>
+
+    <!-- WORD OF THE DAY -->
+    <section class="tile word" style="--i:10">
+      <div class="head"><span class="chip-ic"><svg class="icon" viewBox="0 0 24 24"><use href="#i-book"/></svg></span><span class="lbl">Word of the Day</span></div>
+      <div class="wd-body">
+        <div class="wd-word">Petrichor<span class="pos">noun</span></div>
+        <div class="wd-ipa">/ˈpɛt.rɪ.kɔːr/</div>
+        <div class="wd-def">The pleasant, earthy scent produced when rain falls on dry soil — fitting, with showers due Friday.</div>
+      </div>
+    </section>
+
+    <!-- AROUND TOWN -->
+    <section class="tile town" style="--i:11">
+      <div class="head"><span class="chip-ic"><svg class="icon" viewBox="0 0 24 24"><use href="#i-pin"/></svg></span><span class="lbl">Around Town</span></div>
+      <div class="rows">
+        <div class="at-row"><span class="at-when">SAT 11a</span><span class="at-name">Smorgasburg <small>· Marsha P. Johnson Park</small></span></div>
+        <div class="at-row"><span class="at-when">SAT 8a</span><span class="at-name">McCarren Greenmarket <small>· Union Ave</small></span></div>
+        <div class="at-row"><span class="at-when">THU 9p</span><span class="at-name">Live Jazz <small>· Union Pool</small></span></div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script src="live.js"></script>
+</body>
+</html>

@@ -1,0 +1,166 @@
+# Glance Dashboard — REST sensors
+# Consumes the shared feed-normalizer service.
+# NOTE: for this sandbox preview the service runs on Scott's Mac (192.168.0.79:8090).
+# Productionization = move that service to an always-on host (Pi/Khadas) and update the IP.
+# Deploy: drop in /config/packages/  (packages already enabled in configuration.yaml)
+# NY Harbor cam is served as a self-refreshing page by the feed service (/harborcam),
+# embedded via an iframe card — no camera entity needed (generic camera is UI-only in 2026.5).
+
+rest:
+  - resource: http://192.168.0.79:8090/weather
+    scan_interval: 300
+    sensor:
+      - name: "Glance Weather Temp"
+        unique_id: glance_weather_temp
+        value_template: "{{ value_json.temp }}"
+        unit_of_measurement: "°F"
+        json_attributes:
+          - feels
+          - humidity
+          - wind
+          - desc
+          - code
+          - sunrise
+          - sunset
+          - forecast
+          - updated
+
+  - resource: http://192.168.0.79:8090/ltrain
+    scan_interval: 30
+    sensor:
+      - name: "Glance L Train"
+        unique_id: glance_l_train
+        value_template: "{{ value_json.manhattan[0] if value_json.manhattan else 'n/a' }}"
+        unit_of_measurement: "min"
+        json_attributes:
+          - manhattan
+          - brooklyn
+          - alerts
+          - alert_count
+          - station
+          - updated
+
+  - resource: http://192.168.0.79:8090/ferry
+    scan_interval: 60
+    sensor:
+      - name: "Glance Ferry"
+        unique_id: glance_ferry
+        value_template: >-
+          {{ value_json.north_williamsburg.scheduled[0].time
+             if value_json.north_williamsburg.scheduled else 'n/a' }}
+        json_attributes:
+          - north_williamsburg
+          - south_williamsburg
+          - updated
+
+  - resource: http://192.168.0.79:8090/nitehawk
+    scan_interval: 1800
+    sensor:
+      - name: "Glance Nitehawk"
+        unique_id: glance_nitehawk
+        value_template: "{{ value_json.films | count }}"
+        unit_of_measurement: "films"
+        json_attributes:
+          - films
+          - date
+          - label
+          - updated
+
+  - resource: http://192.168.0.79:8090/citibike
+    scan_interval: 60
+    timeout: 20
+    sensor:
+      - name: "Glance Citi Bike"
+        unique_id: glance_citibike
+        value_template: "{{ value_json.stations[0].bikes if value_json.stations else 'n/a' }}"
+        json_attributes:
+          - stations
+          - updated
+
+  - resource: http://192.168.0.79:8090/airquality
+    scan_interval: 600
+    sensor:
+      - name: "Glance Air Quality"
+        unique_id: glance_air_quality
+        value_template: "{{ value_json.aqi }}"
+        unit_of_measurement: "AQI"
+        json_attributes:
+          - category
+          - pm25
+          - updated
+
+  - resource: http://192.168.0.79:8090/knicks
+    scan_interval: 120
+    sensor:
+      - name: "Glance Knicks"
+        unique_id: glance_knicks
+        value_template: "{{ value_json.games[0].matchup if value_json.games else 'No game' }}"
+        json_attributes:
+          - games
+          - updated
+
+  - resource: http://192.168.0.79:8090/events
+    scan_interval: 900
+    timeout: 30
+    sensor:
+      - name: "Glance Events"
+        unique_id: glance_events
+        value_template: "{{ value_json['items'] | count }}"
+        unit_of_measurement: "events"
+        json_attributes:
+          - items
+          - updated
+
+  - resource: http://192.168.0.79:8090/sports
+    scan_interval: 120
+    sensor:
+      - name: "Glance Sports"
+        unique_id: glance_sports
+        value_template: "{{ value_json.teams | count }}"
+        json_attributes:
+          - teams
+          - updated
+
+  - resource: http://192.168.0.79:8090/word
+    scan_interval: 3600
+    sensor:
+      - name: "Glance Word"
+        unique_id: glance_word
+        value_template: "{{ value_json.word }}"
+        json_attributes:
+          - pos
+          - definition
+          - updated
+
+  - resource: http://192.168.0.79:8090/history
+    scan_interval: 3600
+    sensor:
+      - name: "Glance History"
+        unique_id: glance_history
+        value_template: "{{ value_json.year }}"
+        json_attributes:
+          - text
+          - date
+          - updated
+
+  - resource: http://192.168.0.79:8090/nextevent
+    scan_interval: 180
+    timeout: 30
+    sensor:
+      - name: "Glance Next Event"
+        unique_id: glance_next_event
+        value_template: "{{ (value_json.event.summary if value_json.event else 'None')[:40] }}"
+        json_attributes:
+          - event
+          - modes
+          - updated
+
+  - resource: http://192.168.0.79:8090/comedy
+    scan_interval: 1800
+    sensor:
+      - name: "Glance Comedy"
+        unique_id: glance_comedy
+        value_template: "{{ value_json.venues | map(attribute='shows') | map('count') | sum }}"
+        json_attributes:
+          - venues
+          - updated

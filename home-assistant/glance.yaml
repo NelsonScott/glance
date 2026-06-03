@@ -1,0 +1,49 @@
+# Glance dashboard theme — modern dark, deploy to /config/themes/glance.yaml
+# (configuration.yaml already has: frontend: themes: !include_dir_merge_named themes)
+Glance:
+  # --- backgrounds (cool aurora gradient) ---
+  primary-background-color: "#070b14"
+  secondary-background-color: "#0e1626"
+  card-background-color: "#0e1626"
+  ha-card-background: "rgba(16,23,38,0.72)"
+  lovelace-background: >-
+    radial-gradient(1200px 700px at 82% -6%, rgba(80,140,255,0.34), transparent 52%),
+    radial-gradient(1000px 760px at 4% 104%, rgba(150,90,255,0.30), transparent 56%),
+    radial-gradient(760px 600px at 60% 120%, rgba(34,211,190,0.16), transparent 60%),
+    linear-gradient(135deg, #050813 0%, #0a1230 32%, #131a52 56%, #0d2447 80%, #08192c 100%)
+  # --- text ---
+  primary-text-color: "#e8eef6"
+  secondary-text-color: "#8a96a8"
+  text-primary-color: "#e8eef6"
+  disabled-text-color: "#5b6675"
+  # --- accents ---
+  primary-color: "#5aa2ff"
+  accent-color: "#ffb454"
+  label-badge-text-color: "#e8eef6"
+  # --- cards ---
+  ha-card-border-radius: "18px"
+  ha-card-border-width: "1px"
+  ha-card-border-color: "rgba(255,255,255,0.07)"
+  ha-card-box-shadow: "0 8px 24px rgba(0,0,0,0.5)"
+  # --- header / sidebar ---
+  app-header-background-color: "#0b0f17"
+  app-header-text-color: "#e8eef6"
+  sidebar-background-color: "#0b0f17"
+  sidebar-text-color: "#c7d0dc"
+  sidebar-selected-text-color: "#5aa2ff"
+  sidebar-icon-color: "#8a96a8"
+  divider-color: "rgba(255,255,255,0.08)"
+  # --- markdown ---
+  markdown-code-background-color: "#1c2433"
+  # --- typography (bigger text) ---
+  ha-card-header-font-size: "30px"
+  mdc-typography-body1-font-size: "17px"
+  mdc-typography-headline6-font-size: "1.5rem"
+  paper-font-body1_-_font-size: "17px"
+  paper-font-subhead_-_font-size: "17px"
+  ha-font-size-s: "15px"
+  ha-font-size-m: "17px"
+  ha-font-size-l: "21px"
+  ha-font-size-xl: "27px"
+  ha-font-size-2xl: "34px"
+  ha-font-size-3xl: "40px"
