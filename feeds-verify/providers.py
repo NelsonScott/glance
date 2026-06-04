@@ -240,20 +240,24 @@ def _gmaps_key():
     except Exception:
         return None
 
+# Which HA calendars Next Up should consider (entity_ids). Empty set = all calendars.
+# Kept to the ones with real plans-you'd-go-to; excludes birthdays/holidays (also all-day,
+# so already skipped), trash/workouts/miami/family.
+NEXT_EVENT_CALENDARS = {"calendar.scottdnelson_coffee_gmail_com", "calendar.partiful"}
+
 def _next_cal_event_ha(token):
-    """Soonest upcoming timed event across all Home Assistant calendars.
+    """Soonest upcoming timed event across the allowlisted Home Assistant calendars.
        Used when running as the HA add-on (SUPERVISOR_TOKEN present + homeassistant_api).
        HA owns the Google OAuth; we just read calendar.* over the supervisor-proxied core API."""
     base = "http://supervisor/core/api"
     h = {"Authorization": f"Bearer {token}"}
     now = dt.datetime.now(TZ)
     cals = requests.get(f"{base}/calendars", headers=h, timeout=12).json()
-    print(f"[next_event] HA calendars: {[c.get('entity_id') for c in cals]}", flush=True)
     params = {"start": now.isoformat(), "end": (now + dt.timedelta(days=14)).isoformat()}
     best = None
     for c in cals:
         eid = c.get("entity_id")
-        if not eid:
+        if not eid or (NEXT_EVENT_CALENDARS and eid not in NEXT_EVENT_CALENDARS):
             continue
         try:
             evs = requests.get(f"{base}/calendars/{eid}", headers=h, params=params, timeout=12).json()

@@ -1,5 +1,5 @@
 name: Glance Feeds
-version: "1.0.1"
+version: "1.0.2"
 slug: glance_feeds
 description: Browserless Glance dashboard feed service (Flask, port 8090)
 arch:
