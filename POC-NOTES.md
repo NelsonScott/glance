@@ -44,6 +44,15 @@ dashboard survives sleep/logout. Two parts, both **done and verified**:
   replace those two with an API. See `deploy/ha-addon/README.md`.
 - **Flask dev server** is used (fine for one LAN client; swap to gunicorn if desired).
 - **Screensaver / login-window** piece is still untouched (the other half of the goal).
+- **Idle popup can go blank (App Nap)** — pre-existing: when the kiosk window sits
+  backgrounded, macOS App Nap suspends the renderer's 60s fetch loop, so the 5-min idle
+  popup can snap fullscreen showing a stale/blank dark frame. ⚠️ Do NOT "fix" this with
+  Chromium switches (`disable-renderer-backgrounding` etc.) or `app.disableHardwareAcceleration()`
+  — on this Mac (macOS 26, Apple Silicon) those FROZE the compositor: DOM rendered fine
+  but no frames were produced → fully black window (verified via CDP: rAF never fired).
+  Reverted. Safer approaches to try next, one at a time with a screenshot check:
+  `powerSaveBlocker('prevent-app-suspension')` alone, or the OS-level
+  `defaults write <bundleid> NSAppSleepDisabled -bool YES`.
 - `comedy.py` (Playwright) left in place as reference; `requirements.txt` still lists
   `playwright`. Drop both if we keep this.
 
