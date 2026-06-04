@@ -240,7 +240,47 @@ def _gmaps_key():
     except Exception:
         return None
 
+def _next_cal_event_ha(token):
+    """Soonest upcoming timed event across all Home Assistant calendars.
+       Used when running as the HA add-on (SUPERVISOR_TOKEN present + homeassistant_api).
+       HA owns the Google OAuth; we just read calendar.* over the supervisor-proxied core API."""
+    base = "http://supervisor/core/api"
+    h = {"Authorization": f"Bearer {token}"}
+    now = dt.datetime.now(TZ)
+    cals = requests.get(f"{base}/calendars", headers=h, timeout=12).json()
+    print(f"[next_event] HA calendars: {[c.get('entity_id') for c in cals]}", flush=True)
+    params = {"start": now.isoformat(), "end": (now + dt.timedelta(days=14)).isoformat()}
+    best = None
+    for c in cals:
+        eid = c.get("entity_id")
+        if not eid:
+            continue
+        try:
+            evs = requests.get(f"{base}/calendars/{eid}", headers=h, params=params, timeout=12).json()
+        except Exception:
+            continue
+        for e in evs if isinstance(evs, list) else []:
+            s = e.get("start")
+            if isinstance(s, dict):
+                s = s.get("dateTime") or s.get("date")
+            if not s or "T" not in s:   # skip all-day (holidays/birthdays)
+                continue
+            try:
+                start = dt.datetime.fromisoformat(s)
+            except ValueError:
+                continue
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=TZ)
+            if start > now and (best is None or start < best["start"]):
+                best = {"summary": e.get("summary", "(busy)"), "start": start,
+                        "location": e.get("location", "") or ""}
+    return best
+
 def _next_cal_event():
+    token = os.environ.get("SUPERVISOR_TOKEN")
+    if token:   # running inside Home Assistant — read HA's calendars
+        return _next_cal_event_ha(token)
+    # Mac/dev fallback: the gog CLI
     out = subprocess.run(["gog", "calendar", "events", "--max", "8", "--json"],
                          capture_output=True, text=True, timeout=25)
     now = dt.datetime.now(TZ)

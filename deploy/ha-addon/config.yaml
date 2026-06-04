@@ -1,11 +1,12 @@
 name: Glance Feeds
-version: "1.0.0"
+version: "1.0.1"
 slug: glance_feeds
 description: Browserless Glance dashboard feed service (Flask, port 8090)
 arch:
   - aarch64
 init: false
 host_network: false
+homeassistant_api: true   # lets the feed service read HA's calendar.* (Next Up tile) via the supervisor proxy
 ports:
   "8090/tcp": 8090
 ports_description:
