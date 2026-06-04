@@ -229,25 +229,76 @@ def sports():
 
 # ----------------------------------------------------- word of the day
 # Curated interesting words; one per day (by day-of-year), defined via keyless dictionary API.
-WORDS = ["petrichor", "sonorous", "ephemeral", "serendipity", "defenestration", "limerence",
-         "sonder", "susurrus", "mellifluous", "halcyon", "ineffable", "vellichor", "saudade",
-         "apricity", "gloaming", "numinous", "eunoia", "psithurism", "clinomania", "nyctophilia",
-         "sempiternal", "luminescence", "effervescent", "quintessence", "epiphany", "labyrinthine",
-         "nebulous", "ethereal", "incandescent", "perspicacious", "sanguine", "ebullient",
-         "mercurial", "lugubrious", "obstreperous", "fastidious", "querulous", "taciturn",
-         "verdant", "wanderlust", "zephyr", "aurora", "solitude", "reverie", "cascade",
-         "evanescent", "tessellate", "umbra", "vesper", "wistful"]
+# Curated words paired with concise definitions. The free dictionary API lacks many of
+# these coined/obscure words (sonder, vellichor, limerence, …), so definitions are bundled
+# here as the source of truth; the API is queried only for optional pronunciation/part-of-
+# speech. Insertion order is the rotation order (one word per day-of-year) — keep it stable.
+WORD_DEFS = {
+    "petrichor": "the earthy scent produced when rain falls on dry soil",
+    "sonorous": "deep, full, and resonant in sound",
+    "ephemeral": "lasting for a very short time; fleeting",
+    "serendipity": "the occurrence of happy or beneficial discoveries by chance",
+    "defenestration": "the act of throwing someone or something out of a window",
+    "limerence": "the involuntary state of intense romantic infatuation and longing for another person",
+    "sonder": "the realization that each passerby is living a life as vivid and complex as your own",
+    "susurrus": "a soft, whispering or rustling sound",
+    "mellifluous": "sweet and smooth to the ear; pleasingly flowing",
+    "halcyon": "denoting a past time that was idyllically happy and peaceful",
+    "ineffable": "too great or beautiful to be expressed in words",
+    "vellichor": "the wistful, melancholy atmosphere of a used bookstore",
+    "saudade": "a deep, bittersweet longing for something or someone absent",
+    "apricity": "the warmth of the sun in winter",
+    "gloaming": "the soft light of twilight; dusk",
+    "numinous": "having a strong spiritual or otherworldly, awe-inspiring quality",
+    "eunoia": "beautiful thinking; a well or healthy mind",
+    "psithurism": "the sound of wind whispering through the trees",
+    "clinomania": "an excessive desire to stay in bed",
+    "nyctophilia": "a love of night or darkness",
+    "sempiternal": "everlasting and unchanging; eternal",
+    "luminescence": "a soft emission of light not caused by heat",
+    "effervescent": "bubbly and vivacious; full of lively high spirits",
+    "quintessence": "the most perfect or typical example of a quality or class",
+    "epiphany": "a sudden, striking moment of realization or insight",
+    "labyrinthine": "intricate and confusing, like a maze",
+    "nebulous": "vague, hazy, or ill-defined",
+    "ethereal": "delicate and light, seeming almost too perfect for this world",
+    "incandescent": "glowing with intense heat or light; brilliantly radiant",
+    "perspicacious": "having keen insight and sharp understanding",
+    "sanguine": "cheerfully optimistic, especially in a difficult situation",
+    "ebullient": "cheerful and bubbling over with energy",
+    "mercurial": "prone to sudden, unpredictable changes of mood",
+    "lugubrious": "looking or sounding mournful and dismal",
+    "obstreperous": "noisy and difficult to control",
+    "fastidious": "meticulous, very attentive to detail, and hard to please",
+    "querulous": "complaining in a petulant or whining manner",
+    "taciturn": "reserved and saying little; uncommunicative",
+    "verdant": "lush and green with vegetation",
+    "wanderlust": "a strong desire to travel and explore the world",
+    "zephyr": "a soft, gentle breeze",
+    "aurora": "a natural light display in the sky; also, the dawn",
+    "solitude": "the peaceful state of being alone",
+    "reverie": "a state of pleasant, dreamy musing",
+    "cascade": "a small waterfall; something that happens in a chain of stages",
+    "evanescent": "quickly fading from sight or memory; fleeting",
+    "tessellate": "to cover a surface with repeated shapes leaving no gaps",
+    "umbra": "the fully shaded inner region of a shadow",
+    "vesper": "an evening prayer or song; also, the evening star",
+    "wistful": "full of vague, regretful longing",
+}
+WORDS = list(WORD_DEFS)  # rotation order = insertion order
 def word_of_day():
     word = WORDS[dt.datetime.now(TZ).timetuple().tm_yday % len(WORDS)]
-    try:
-        d = requests.get(f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}", timeout=12).json()
-        meaning = d[0]["meanings"][0]
-        ipa = d[0].get("phonetic") or next((p.get("text") for p in d[0].get("phonetics", []) if p.get("text")), "")
-        return {"word": word, "pos": meaning.get("partOfSpeech", ""), "ipa": ipa,
-                "definition": meaning["definitions"][0]["definition"][:200], "updated": _now()}
-    except Exception as e:
-        return {"word": word, "pos": "", "ipa": "", "definition": "(definition unavailable)",
-                "error": str(e)[:60], "updated": _now()}
+    pos = ipa = ""
+    try:  # best-effort pronunciation/part-of-speech; never let the API fail the tile
+        d = requests.get(f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}", timeout=8).json()
+        if isinstance(d, list) and d:
+            m = d[0]["meanings"][0]
+            pos = m.get("partOfSpeech", "")
+            ipa = d[0].get("phonetic") or next((p.get("text") for p in d[0].get("phonetics", []) if p.get("text")), "")
+    except Exception:
+        pass
+    return {"word": word, "pos": pos, "ipa": ipa,
+            "definition": WORD_DEFS.get(word, "(definition unavailable)"), "updated": _now()}
 
 # ----------------------------------------------------- on this day (history)
 def on_this_day():
