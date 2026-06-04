@@ -28,14 +28,15 @@ WMO = {0:"Clear",1:"Mainly clear",2:"Partly cloudy",3:"Overcast",45:"Fog",48:"Ri
        65:"Heavy rain",71:"Light snow",73:"Snow",75:"Heavy snow",80:"Rain showers",
        81:"Rain showers",82:"Violent showers",95:"Thunderstorm",96:"Thunderstorm+hail"}
 
-@app.route("/weather")
-def weather():
+def _weather():
     url = ("https://api.open-meteo.com/v1/forecast?latitude=%s&longitude=%s"
            "&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m,relative_humidity_2m"
            "&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code,sunrise,sunset,uv_index_max"
            "&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=America/New_York&forecast_days=3"
            % (LAT, LON))
     j = requests.get(url, timeout=15).json()
+    if "current" not in j:   # Open-Meteo error payload, e.g. {"error":true,"reason":"Too many concurrent requests"}
+        raise RuntimeError("open-meteo: " + str(j.get("reason", j))[:80])
     c = j["current"]; d = j["daily"]
     days = [{"date": d["time"][i], "min": round(d["temperature_2m_min"][i]),
              "max": round(d["temperature_2m_max"][i]), "precip": d["precipitation_probability_max"][i],
@@ -44,13 +45,18 @@ def weather():
     wdir = dirs[round((c.get("wind_direction_10m", 0) % 360) / 45) % 8]
     uv = round(d.get("uv_index_max", [0])[0])
     uv_cat = "Low" if uv < 3 else "Moderate" if uv < 6 else "High" if uv < 8 else "Very High" if uv < 11 else "Extreme"
-    return jsonify({"temp": round(c["temperature_2m"]), "feels": round(c["apparent_temperature"]),
+    return {"temp": round(c["temperature_2m"]), "feels": round(c["apparent_temperature"]),
                     "humidity": c["relative_humidity_2m"], "wind": round(c["wind_speed_10m"]), "wind_dir": wdir,
                     "desc": WMO.get(c["weather_code"], "?"), "code": c["weather_code"],
                     "high": days[0]["max"], "low": days[0]["min"],
                     "uv": uv, "uv_cat": uv_cat,
                     "sunrise": d["sunrise"][0][-5:], "sunset": d["sunset"][0][-5:],
-                    "forecast": days, "updated": dt.datetime.now(TZ).strftime("%H:%M")})
+                    "forecast": days, "updated": dt.datetime.now(TZ).strftime("%H:%M")}
+
+@app.route("/weather")
+def weather():
+    # cache 10 min + serve last-good on a transient Open-Meteo error (e.g. rate limit)
+    return jsonify(_cached("weather", 600, _weather))
 
 # ------------------------------------------------------------------ L train
 @app.route("/ltrain")
@@ -221,12 +227,17 @@ def comedy():  # cache-only — the ~2min Playwright scrape runs in the warmer t
 
 @app.route("/all")
 def all_feeds():
+    tiles = {"weather": weather, "ltrain": ltrain, "ferry": ferry, "nitehawk": nitehawk,
+             "citibike": citibike, "airquality": airquality, "knicks": knicks, "events": events,
+             "sports": sports, "word": word, "history": history, "nextevent": nextevent, "comedy": comedy}
+    out = {}
     with app.test_request_context():
-        return jsonify({"weather": weather().json, "ltrain": ltrain().json, "ferry": ferry().json,
-                        "nitehawk": nitehawk().json, "citibike": citibike().json,
-                        "airquality": airquality().json, "knicks": knicks().json, "events": events().json,
-                        "sports": sports().json, "word": word().json, "history": history().json,
-                        "nextevent": nextevent().json, "comedy": comedy().json})
+        for key, fn in tiles.items():
+            try:                       # one flaky tile must never blank the whole dashboard
+                out[key] = fn().json
+            except Exception as e:
+                out[key] = {"error": str(e)[:80]}
+    return jsonify(out)
 
 @app.route("/citycam")
 def citycam():
