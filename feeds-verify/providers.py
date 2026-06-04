@@ -286,8 +286,10 @@ WORD_DEFS = {
     "wistful": "full of vague, regretful longing",
 }
 WORDS = list(WORD_DEFS)  # rotation order = insertion order
+WORD_OVERRIDE = {"2026-06-04": "halcyon"}  # one-off manual picks by date; auto-reverts the next day
 def word_of_day():
-    word = WORDS[dt.datetime.now(TZ).timetuple().tm_yday % len(WORDS)]
+    today = dt.datetime.now(TZ).date().isoformat()
+    word = WORD_OVERRIDE.get(today) or WORDS[dt.datetime.now(TZ).timetuple().tm_yday % len(WORDS)]
     pos = ipa = ""
     try:  # best-effort pronunciation/part-of-speech; never let the API fail the tile
         d = requests.get(f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}", timeout=8).json()

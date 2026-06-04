@@ -190,15 +190,23 @@ def ferry():
 
 # ----------------------------------------------------- new widgets (round 2)
 _cache = {}
+_fail = {}            # key -> time of last failure (upstream backoff)
+_NEG_TTL = 120        # after a failure, wait this long before hitting the upstream again
 def _cached(key, ttl, fn):
     e = _cache.get(key)
-    if e and time.time() - e[0] < ttl:
+    now = time.time()
+    if e and now - e[0] < ttl:
         return e[1]
+    if now - _fail.get(key, 0) < _NEG_TTL:   # recently failed → don't hammer the upstream
+        if e:
+            return e[1]                      # serve last-good if we have it
+        raise RuntimeError(f"{key} upstream unavailable (cooling down)")
     try:
-        val = fn(); _cache[key] = (time.time(), val)
+        val = fn(); _cache[key] = (now, val)
         return val
     except Exception:
-        if e:            # stale-while-error: a transient upstream timeout shouldn't blank the widget
+        _fail[key] = now
+        if e:            # stale-while-error: a transient upstream blip shouldn't blank the widget
             return e[1]
         raise
 
