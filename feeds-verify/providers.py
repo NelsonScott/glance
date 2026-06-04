@@ -111,12 +111,49 @@ def _kind(frm):
             return val
     return ("📌", "Event")
 
+def _gmail_access_token():
+    r = requests.post("https://oauth2.googleapis.com/token", timeout=12, data={
+        "client_id": os.environ["GMAIL_CLIENT_ID"],
+        "client_secret": os.environ["GMAIL_CLIENT_SECRET"],
+        "refresh_token": os.environ["GMAIL_REFRESH_TOKEN"],
+        "grant_type": "refresh_token"})
+    r.raise_for_status()
+    return r.json()["access_token"]
+
+def _gmail_search(q, max_results=20, want=12):
+    """Gmail API equivalent of `gog gmail search` -> [{from, subject, date}].
+       Used in the HA add-on (GMAIL_* env set from add-on options); one thread per row."""
+    at = _gmail_access_token()
+    h = {"Authorization": f"Bearer {at}"}
+    base = "https://gmail.googleapis.com/gmail/v1/users/me"
+    lst = requests.get(f"{base}/messages", headers=h,
+                       params={"q": q, "maxResults": max_results}, timeout=15).json()
+    out, seen = [], set()
+    for m in lst.get("messages", []):
+        tid = m.get("threadId")
+        if tid in seen:
+            continue
+        seen.add(tid)
+        msg = requests.get(f"{base}/messages/{m['id']}", headers=h, timeout=12,
+                           params={"format": "metadata",
+                                   "metadataHeaders": ["From", "Subject", "Date"]}).json()
+        hdrs = {d["name"].lower(): d["value"] for d in msg.get("payload", {}).get("headers", [])}
+        ms = msg.get("internalDate")
+        date = dt.datetime.fromtimestamp(int(ms) / 1000, TZ).strftime("%Y-%m-%d") if ms else ""
+        out.append({"from": hdrs.get("from", ""), "subject": hdrs.get("subject", ""), "date": date})
+        if len(out) >= want:
+            break
+    return out
+
 def events(n=6):
     q = "newer_than:12d from:(%s)" % " OR ".join(EVENT_SENDERS)
     try:
-        out = subprocess.run(["gog", "gmail", "search", q, "--max", "20", "--json"],
-                             capture_output=True, text=True, timeout=25)
-        threads = json.loads(out.stdout).get("threads", [])
+        if os.environ.get("GMAIL_REFRESH_TOKEN"):     # HA add-on: read-only Gmail API
+            threads = _gmail_search(q, 20)
+        else:                                          # Mac/dev fallback: gog CLI
+            out = subprocess.run(["gog", "gmail", "search", q, "--max", "20", "--json"],
+                                 capture_output=True, text=True, timeout=25)
+            threads = json.loads(out.stdout).get("threads", [])
     except Exception as e:
         return {"items": [], "error": str(e)[:80], "updated": _now()}
     items, seen = [], set()

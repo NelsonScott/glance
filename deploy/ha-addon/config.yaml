@@ -1,5 +1,5 @@
 name: Glance Feeds
-version: "1.0.2"
+version: "1.0.3"
 slug: glance_feeds
 description: Browserless Glance dashboard feed service (Flask, port 8090)
 arch:
@@ -13,5 +13,11 @@ ports_description:
   "8090/tcp": Glance dashboard UI + /all JSON
 options:
   google_maps_key: ""
+  gmail_client_id: ""
+  gmail_client_secret: ""
+  gmail_refresh_token: ""
 schema:
   google_maps_key: "str?"
+  gmail_client_id: "str?"
+  gmail_client_secret: "str?"
+  gmail_refresh_token: "str?"
