@@ -335,6 +335,48 @@ def _gmaps_key():
 # so already skipped), trash/workouts/miami/family.
 NEXT_EVENT_CALENDARS = {"calendar.scottdnelson_coffee_gmail_com", "calendar.partiful"}
 
+# Direct Google Calendar equivalent of NEXT_EVENT_CALENDARS above (same two calendars,
+# addressed by their real Google Calendar IDs instead of HA entity_ids). Partiful shows
+# up as an ordinary imported secondary calendar in the same Google account, not a
+# separate integration, so both are reachable with one OAuth grant.
+NEXT_EVENT_GCAL_IDS = ["primary", "p2dibrck4dlhsfu7im3j5cq6bfk2queg@import.calendar.google.com"]
+
+def _gcal_access_token():
+    r = requests.post("https://oauth2.googleapis.com/token", timeout=12, data={
+        "client_id": os.environ["GMAIL_CLIENT_ID"],
+        "client_secret": os.environ["GMAIL_CLIENT_SECRET"],
+        "refresh_token": os.environ["GCAL_REFRESH_TOKEN"],
+        "grant_type": "refresh_token"})
+    r.raise_for_status()
+    return r.json()["access_token"]
+
+def _next_cal_event_google():
+    """Soonest upcoming timed event, straight from the Google Calendar API —
+       no Home Assistant involved. Same OAuth client as the Gmail tile, just with
+       calendar.readonly added; GCAL_REFRESH_TOKEN is its own grant (separate from
+       GMAIL_REFRESH_TOKEN, same client_id/secret)."""
+    at = _gcal_access_token()
+    h = {"Authorization": f"Bearer {at}"}
+    now = dt.datetime.now(TZ)
+    params = {"timeMin": now.isoformat(), "timeMax": (now + dt.timedelta(days=14)).isoformat(),
+              "singleEvents": "true", "orderBy": "startTime", "maxResults": 10}
+    best = None
+    for cal_id in NEXT_EVENT_GCAL_IDS:
+        try:
+            url = f"https://www.googleapis.com/calendar/v3/calendars/{requests.utils.quote(cal_id, safe='')}/events"
+            evs = requests.get(url, headers=h, params=params, timeout=12).json().get("items", [])
+        except Exception:
+            continue
+        for e in evs:
+            s = (e.get("start") or {}).get("dateTime")
+            if not s:   # skip all-day events (no dateTime, only date)
+                continue
+            start = dt.datetime.fromisoformat(s)
+            if start > now and (best is None or start < best["start"]):
+                best = {"summary": e.get("summary", "(busy)"), "start": start,
+                        "location": e.get("location", "") or ""}
+    return best
+
 def _next_cal_event_ha(token, base=None):
     """Soonest upcoming timed event across the allowlisted Home Assistant calendars.
        HA owns the Google OAuth; we just read calendar.* over HA's core REST API.
@@ -372,6 +414,8 @@ def _next_cal_event_ha(token, base=None):
     return best
 
 def _next_cal_event():
+    if os.environ.get("GCAL_REFRESH_TOKEN"):   # preferred: direct Google Calendar API, no HA needed
+        return _next_cal_event_google()
     token = os.environ.get("SUPERVISOR_TOKEN")
     if token:   # running inside Home Assistant — read HA's calendars via the supervisor proxy
         return _next_cal_event_ha(token)
