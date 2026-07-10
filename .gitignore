@@ -2,6 +2,7 @@
 feeds-verify/.venv/
 __pycache__/
 *.pyc
+feeds-verify/.env
 
 # node / electron
 electron/node_modules/

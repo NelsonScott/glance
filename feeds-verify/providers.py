@@ -335,11 +335,12 @@ def _gmaps_key():
 # so already skipped), trash/workouts/miami/family.
 NEXT_EVENT_CALENDARS = {"calendar.scottdnelson_coffee_gmail_com", "calendar.partiful"}
 
-def _next_cal_event_ha(token):
+def _next_cal_event_ha(token, base=None):
     """Soonest upcoming timed event across the allowlisted Home Assistant calendars.
-       Used when running as the HA add-on (SUPERVISOR_TOKEN present + homeassistant_api).
-       HA owns the Google OAuth; we just read calendar.* over the supervisor-proxied core API."""
-    base = "http://supervisor/core/api"
+       HA owns the Google OAuth; we just read calendar.* over HA's core REST API.
+       base defaults to the supervisor-proxied path (HA add-on mode); pass a real
+       HA URL + long-lived token (HA_URL/HA_TOKEN) when running as a standalone service."""
+    base = base or "http://supervisor/core/api"
     h = {"Authorization": f"Bearer {token}"}
     now = dt.datetime.now(TZ)
     cals = requests.get(f"{base}/calendars", headers=h, timeout=12).json()
@@ -372,8 +373,12 @@ def _next_cal_event_ha(token):
 
 def _next_cal_event():
     token = os.environ.get("SUPERVISOR_TOKEN")
-    if token:   # running inside Home Assistant — read HA's calendars
+    if token:   # running inside Home Assistant — read HA's calendars via the supervisor proxy
         return _next_cal_event_ha(token)
+    ha_token = os.environ.get("HA_TOKEN")
+    if ha_token:   # standalone service (e.g. PC systemd unit) — talk to HA's real REST API
+        base = os.environ.get("HA_URL", "http://192.168.0.128:8123").rstrip("/") + "/api"
+        return _next_cal_event_ha(ha_token, base=base)
     # Mac/dev fallback: the gog CLI
     out = subprocess.run(["gog", "calendar", "events", "--max", "8", "--json"],
                          capture_output=True, text=True, timeout=25)

@@ -8,17 +8,19 @@ any device on the LAN.
 
 ## Quick start
 
-```bash
-# 1. start the data/web service
-cd feeds-verify
-./.venv/bin/python feed_server.py        # serves http://localhost:8090
+The feed service runs on the always-on PC (`~/projects/glance-dashboard`, `systemctl --user status glance-feed.service`) — not on the Mac. The Mac only runs the Electron viewer, pointed at the PC.
 
-# 2. open the dashboard
-open http://localhost:8090/              # any browser, or…
+```bash
+# on the Mac: just open the viewer
+open http://192.168.0.66:8090/           # any browser, or…
 open /Applications/Glance.app            # the packaged Mac app
+
+# local dev server instead (overrides the PC URL):
+cd feeds-verify && ./.venv/bin/python feed_server.py   # serves http://localhost:8090
+GLANCE_URL=http://localhost:8090/ open /Applications/Glance.app
 ```
 
-LAN access from a phone / TV browser: `http://192.168.0.79:8090/`
+LAN access from a phone / TV browser: `http://192.168.0.66:8090/`
 
 ## Architecture
 
@@ -48,7 +50,8 @@ feed_server.py ──/all──► live.js ──renders──► tiles
 | `feeds-verify/providers.py`   | Citi Bike · AQI · Knicks · NY sports · word · history · events · next-event/commute |
 | `feeds-verify/nitehawk.py` · `comedy.py` | Playwright/HTTP scrapers for showtimes |
 | `feeds-verify/webapp/`        | the dashboard UI (`index.html`, `live.js`) |
-| `feeds-verify/verify_feeds.py` · `shoot_ha.py` | one-off feed test / screenshot helpers |
+| `feeds-verify/verify_feeds.py` | one-off feed test helper |
+| `feeds-verify/shoot_ha.py`     | vestigial — screenshot helper for the old HA Lovelace "Glance" dashboard, which this app replaced; not part of the active pipeline |
 | `electron/`                   | Electron app + `Glance.command` launcher; packaged into `dist/` |
 | `requirements.txt`            | Python deps (recreate venv: `python3 -m venv .venv && ./.venv/bin/pip install -r requirements.txt`) |
 

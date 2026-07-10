@@ -1,5 +1,30 @@
 # Browserless backend → deployed to the Khadas (Home Assistant)
 
+## 2026-07-10: moved again — Khadas → PC (Khadas decommissioned/sold)
+
+The Khadas (192.168.0.214) that hosted the `local_glance_feeds` HA add-on is gone —
+Home Assistant itself already migrated off it 2026-07-01 to a PC libvirt VM
+(`192.168.0.128:8123`), and Khadas is being sold. Rather than reinstalling the add-on on the
+new HA VM, the feed service is now a plain **systemd `--user` unit on the always-on PC**
+(`glance-feed.service`, `~/projects/glance-dashboard/feeds-verify`) — no HA add-on wrapper
+at all, since HA involvement was only ever for always-on hosting, not function.
+
+**Code change required:** `_next_cal_event_ha()` in `providers.py` hardcoded
+`http://supervisor/core/api`, which only resolves inside HA's Supervisor-managed Docker
+network — it silently would have returned nothing outside an add-on. Added a real
+`HA_TOKEN`/`HA_URL` env-var path (uses HA's normal REST API + a long-lived token) as a third
+branch alongside the old Supervisor-proxy mode and the Mac/`gog` dev fallback.
+
+- `electron/main.js` `DASH_URL` default → `http://192.168.0.66:8090/` (the PC).
+- Repo moved on the Mac from `~/Sandbox/glance-dashboard` → `~/projects/glance-dashboard`.
+- `deploy/ha-addon/` and `home-assistant/*.yaml` are now vestigial (kept for reference/rollback,
+  not the active deployment path).
+- ⚠️ **Gmail ("Around Town") tile still needs `GMAIL_CLIENT_ID`/`GMAIL_CLIENT_SECRET`/
+  `GMAIL_REFRESH_TOKEN` re-provisioned on the PC** — these lived only in the Khadas add-on's
+  options and 1Password; not recoverable from this Mac's Keychain. Tile degrades gracefully
+  (returns `{"items": [], "error": ...}`) rather than crashing the service, so this isn't a
+  blocker, just a known gap until those values are pulled from 1Password.
+
 Branch: `poc/browserless-backend`. Goal: move the feed service off the Mac so the
 dashboard survives sleep/logout. Two parts, both **done and verified**:
 1. Drop the one heavy dependency (headless Chromium / Playwright) so the service is light
