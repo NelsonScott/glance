@@ -122,7 +122,7 @@
     qs('#nu-eta').textContent = mu == null ? '' : mu >= 60 ? `in ${Math.floor(mu / 60)}h ${mu % 60}m` : `in ${mu}m`;
     const modes = ne.modes || [];
     if (!modes.length) {
-      qs('#nu-modes').innerHTML = `<div class="nu-meta" style="opacity:.6">${e.location ? 'commute loading…' : 'no commute needed'}</div>`;
+      qs('#nu-modes').innerHTML = `<div class="nu-meta" style="opacity:.6">${e.location ? 'no route found for this place' : 'no commute needed'}</div>`;
       return;
     }
     qs('#nu-modes').innerHTML = modes.map(m => {

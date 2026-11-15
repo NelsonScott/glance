@@ -532,12 +532,26 @@ def _transit_detail(leg):
         out += f", then {name(t)}"
     return out + f' to {rides[-1]["arrival_stop"]["name"]}'
 
+_DMS = re.compile(r"""(\d+)\s*°\s*(\d+)\s*['′]\s*([\d.]+)\s*["″]?\s*([NSEW])""", re.I)
+def _clean_dest(dest):
+    """A pin dropped in a calendar event arrives as 40°44'54.4"N 73°59'08.4"W, which the
+       directions lookup cannot read. Turn that into plain 'lat,lon'."""
+    parts = _DMS.findall(dest or "")
+    if len(parts) != 2:
+        return dest
+    vals = {}
+    for d, m, sec, h in parts:
+        v = int(d) + int(m) / 60 + float(sec) / 3600
+        vals["lat" if h.upper() in "NS" else "lon"] = -v if h.upper() in "SW" else v
+    return f'{vals["lat"]:.6f},{vals["lon"]:.6f}' if len(vals) == 2 else dest
+
 def travel(dest, arrive, origin=None, keys=None):
     """How long it takes to reach `dest` by `arrive` (aware datetime), per mode, and when to leave.
        origin is (lat, lon), default home. Train times come from the real timetable: the leave-by
        is when you must walk out to catch the last train that still arrives on time, not just
        arrival minus ride length. Needs GOOGLE_MAPS_KEY; without it, a rough OSRM estimate."""
     origin = origin or (HOME_LAT, HOME_LON)
+    dest = _clean_dest(dest)
     now = dt.datetime.now(TZ)
     key = _gmaps_key()
     modes, end = [], None
