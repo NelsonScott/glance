@@ -641,7 +641,8 @@ def cams(n=4):
 # {"picks": [{"title", "when_iso", "venue", "why", "price_from", "tag", "category", "score"}]}
 PICKS_FILE = os.environ.get("PICKS_FILE") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "picks.json")
 def picks(n=6):
-    """The n best-scored things in the next 7 days that have not started, in time order."""
+    """The n best-scored things in the next 7 days that have not started. Score decides what
+       makes the cut; the tile lists them in time order and marks the standouts `hot`."""
     try:
         with open(PICKS_FILE) as f:
             data = json.load(f)
@@ -664,7 +665,9 @@ def picks(n=6):
         day = ("TONIGHT" if when.hour >= 17 else "TODAY") if when.date() == now.date() else when.strftime("%a").upper()
         out.append({"day": day, "time": when.strftime("%-I:%M") + ("a" if when.hour < 12 else "p"),
                     "title": p.get("title", ""), "venue": p.get("venue", ""), "why": p.get("why", ""),
-                    "price_from": p.get("price_from"), "tag": p.get("tag"), "category": p.get("category")})
+                    "price_from": p.get("price_from"), "tag": p.get("tag"), "category": p.get("category"),
+                    # stands out on the tile: a top score, or about to be gone
+                    "hot": (p.get("score") or 0) >= 90 or (p.get("tag") or "").startswith(("closes", "last"))})
     return {"picks": out, "generated": data.get("generated"), "updated": _now()}
 
 if __name__ == "__main__":

@@ -95,7 +95,8 @@
     if (!wx) return;
     const ic = wxIcon(wx.code);
     const stat = (icon, v, k) => `<div class="wx-stat">${svg(icon)}<div><div class="v">${v}</div><div class="k">${k}</div></div></div>`;
-    const fc = (wx.forecast || []).map(d => `<div class="fc"><span class="d">${dayName(d.date)}</span>` +
+    const fc = (wx.forecast || []).slice(1, 4).map(   // today is already the big number; show the next three
+      d => `<div class="fc"><span class="d">${dayName(d.date)}</span>` +
       `<svg class="icon" viewBox="0 0 24 24" style="color:${wxIcon(d.code).color}"><use href="#${wxIcon(d.code).id}"/></svg>` +
       `<div class="t"><span class="hi">${d.max}°</span><span class="lo">${d.min}°</span></div></div>`).join('');
     const aqi = aq ? aq.aqi : '–', aqcat = aq ? aq.category : '';
@@ -116,7 +117,7 @@
       qs('#nu-modes').innerHTML = ''; qs('#nu-eta').textContent = ''; return; }
     qs('#nu-when').textContent = e.when || '';
     qs('.next .nu-title').textContent = e.summary || '';
-    qs('.next .nu-meta').textContent = e.location || '';
+    qs('.next .nu-meta').textContent = /^\s*-?\d+[°.]/.test(e.location || '') ? '' : (e.location || '');   // raw coordinates are noise
     const mu = e.mins_until;
     qs('#nu-eta').textContent = mu == null ? '' : mu >= 60 ? `in ${Math.floor(mu / 60)}h ${mu % 60}m` : `in ${mu}m`;
     const modes = ne.modes || [];
@@ -190,9 +191,8 @@
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   function renderWeek(wk) {
     const picks = (wk && wk.picks) || [];
-    qs('#wk-sub').textContent = picks.length ? `${picks.length} picks · next 7 days` : '';
     qs('#wk-list').innerHTML = picks.length ? picks.map(p =>
-      `<div class="wk" style="--cat:var(${CAT[p.category] || '--c-amber'})">` +
+      `<div class="wk${p.hot ? ' hot' : ''}" style="--cat:var(${CAT[p.category] || '--c-amber'})">` +
       `<div class="wk-when"><b>${esc(p.day)}</b><span>${esc(p.time)}</span></div>` +
       `<div class="wk-body"><div class="wk-title">${esc(p.title)}</div><div class="wk-sub"><b>${esc(p.venue)}</b> · ${esc(p.why)}</div></div>` +
       `<div class="wk-side">${p.price_from != null ? `<span class="wk-price">$${esc(p.price_from)}+</span>` : ''}` +

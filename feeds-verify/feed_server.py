@@ -33,7 +33,7 @@ def _weather():
     url = ("https://api.open-meteo.com/v1/forecast?latitude=%s&longitude=%s"
            "&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m,relative_humidity_2m"
            "&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code,sunrise,sunset,uv_index_max"
-           "&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=America/New_York&forecast_days=3"
+           "&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=America/New_York&forecast_days=4"
            % (LAT, LON))
     j = requests.get(url, timeout=15).json()
     if "current" not in j:   # Open-Meteo error payload, e.g. {"error":true,"reason":"Too many concurrent requests"}
@@ -41,7 +41,7 @@ def _weather():
     c = j["current"]; d = j["daily"]
     days = [{"date": d["time"][i], "min": round(d["temperature_2m_min"][i]),
              "max": round(d["temperature_2m_max"][i]), "precip": d["precipitation_probability_max"][i],
-             "code": d["weather_code"][i], "desc": WMO.get(d["weather_code"][i], "?")} for i in range(3)]
+             "code": d["weather_code"][i], "desc": WMO.get(d["weather_code"][i], "?")} for i in range(len(d["time"]))]
     dirs = ["N","NE","E","SE","S","SW","W","NW"]
     wdir = dirs[round((c.get("wind_direction_10m", 0) % 360) / 45) % 8]
     uv = round(d.get("uv_index_max", [0])[0])

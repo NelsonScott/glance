@@ -389,6 +389,7 @@
   .wk-price{ font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:600; color:var(--ink-dim); }
   .wk-tag{ font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:600; letter-spacing:0.04em; padding:3px 8px; border-radius:8px;
     background:color-mix(in oklab,var(--st-late) 18%, transparent); color:var(--st-late); white-space:nowrap; }
+  .wk.hot{ background:rgba(255,255,255,0.08); border-color:color-mix(in oklab, var(--cat) 55%, transparent); }
   .wk-empty{ grid-column:1 / -1; align-self:center; text-align:center; font-size:14px; color:var(--ink-mute); }
 
   /* ============ COMPACT TILES (weather is a third wide, bikes a third wide) ============ */
@@ -525,7 +526,7 @@
 
     <!-- L TRAIN -->
     <section class="tile ltrn" style="--i:2">
-      <div class="head"><span class="roundel">L</span><span class="lbl">L → Manhattan</span><span class="sub">Bedford Av</span></div>
+      <div class="head"><span class="roundel">L</span><span class="sub">Bedford Av</span></div>
       <div class="ltrn-body">
         <div class="l-next"><span class="n" id="l-next">3</span><span class="u">min</span></div>
         <div class="l-rest" id="l-rest"></div>
@@ -599,7 +600,6 @@
 
     <!-- THIS WEEK FOR YOU -->
     <section class="tile week" style="--i:6">
-      <div class="head"><span class="dot"></span><span class="lbl">This week for you</span><span class="sub" id="wk-sub"></span></div>
       <div class="wk-list" id="wk-list"></div>
     </section>
 
