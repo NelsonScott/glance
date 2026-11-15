@@ -280,6 +280,8 @@ def all_feeds():
                 out[key] = fn().json
             except Exception as e:
                 out[key] = {"error": str(e)[:80]}
+    # changes whenever the page files do; an open dashboard reloads itself when it sees a new value
+    out["build"] = str(int(max(os.path.getmtime(os.path.join(WEBAPP, n)) for n in ("index.html", "live.js"))))
     return jsonify(out)
 
 @app.route("/citycam")

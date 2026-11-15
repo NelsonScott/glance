@@ -185,7 +185,7 @@
   function renderNitehawk(nh) {
     const films = ((nh && nh.films) || []).slice(0, 3);
     qs('.nite .rows').innerHTML = films.length ? films.map(f =>
-      `<div class="row"><div class="title">${esc(f.title)}</div>${f.rt != null ? `<span class="rt ${f.rt >= 60 ? 'fresh' : 'rotten'}" title="Rotten Tomatoes">${f.rt}%</span>` : ''}<div class="times">` +
+      `<div class="row"><div class="title">${esc(f.title)}${f.rt != null ? `<span class="rt ${f.rt >= 60 ? 'fresh' : 'rotten'}" title="Rotten Tomatoes">${f.rt}%</span>` : ''}</div><div class="times">` +
       (f.showtimes || []).map(s => `<span${s.status === 'sold_out' ? ' style="opacity:.4;text-decoration:line-through"' : ''}>${esc(s.time)}</span>`).join('') +
       `</div></div>`).join('') : '<div class="row"><div class="title">No showtimes left today</div></div>';
   }
@@ -199,10 +199,12 @@
   }
 
   const CAT = { game: '--c-blue', comedy: '--c-yellow', music: '--c-pink', theatre: '--c-violet', film: '--c-indigo', seasonal: '--c-green' };
+  const STICKER = { game: '🏀', music: '🪩', comedy: '🎤', theatre: '🎭', film: '🎬', seasonal: '⛸️' };
   function renderWeek(wk) {
     const picks = (wk && wk.picks) || [];
     qs('#wk-list').innerHTML = picks.length ? picks.map(p =>
       `<div class="wk${p.hot ? ' hot' : ''}" style="--cat:var(${CAT[p.category] || '--c-amber'})">` +
+      (p.hot ? `<span class="wk-sticker" aria-hidden="true">${STICKER[p.category] || '⭐'}</span>` : '') +
       `<div class="wk-when"><b>${esc(p.day)}</b><span>${esc(p.time)}</span></div>` +
       `<div class="wk-body"><div class="wk-title">${esc(p.title)}</div><div class="wk-sub"><b>${esc(p.venue)}</b> · ${esc(p.why)}</div></div>` +
       `<div class="wk-side">${p.price_from != null ? `<span class="wk-price">$${esc(p.price_from)}+</span>` : ''}` +
@@ -211,9 +213,11 @@
   }
 
   /* ---------- fetch loop ---------- */
+  let BUILD = null;   // version of the page files this tab loaded
   async function refresh() {
     try {
       const d = await (await fetch('/all', { cache: 'no-store' })).json();
+      if (d.build) { if (BUILD && d.build !== BUILD) { location.reload(); return; } BUILD = d.build; }
       const safe = (fn, ...a) => { try { fn(...a); } catch (e) { console.warn(fn.name + ' failed', e); } };   // one bad tile must not freeze the rest
       safe(renderWeather, d.weather, d.airquality);
       safe(renderNext, d.nextevent);

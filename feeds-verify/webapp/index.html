@@ -392,8 +392,11 @@
   .wk-title, .wk-sub, .nu-title, .cb-name{ display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
   .nu-meta{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .quiet{ font-size:14px; color:var(--ink-mute); align-self:center; }
-  .rt{ flex:none; font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:700; font-variant-numeric:tabular-nums; }
-  .rt.fresh{ color:var(--st-ok); } .rt.rotten{ color:var(--ink-mute); }
+  .rt{ margin-left:9px; font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .rt.fresh{ color:var(--st-ok); } .rt.rotten{ color:var(--st-late); }
+  .wk{ position:relative; }
+  .wk-sticker{ position:absolute; top:-11px; left:-9px; font-size:30px; line-height:1; transform:rotate(-14deg);
+    filter:drop-shadow(0 3px 5px rgba(0,0,0,0.55)); pointer-events:none; }
   .wk-empty{ grid-column:1 / -1; align-self:center; text-align:center; font-size:14px; color:var(--ink-mute); }
 
   /* ============ COMPACT TILES (weather is a third wide, bikes a third wide) ============ */
