@@ -50,14 +50,15 @@
     if (!CAMS.length) {                  // nothing live: a calm tile, not a YouTube error
       frame.removeAttribute('src'); frame.style.display = 'none';
       qs('#cam-place').innerHTML = 'Cams offline<small>checking again in 15 min</small>';
+      qs('.live-badge').style.visibility = 'hidden';
       return;
     }
-    frame.style.display = '';
+    frame.style.display = ''; qs('.live-badge').style.visibility = '';
     camIdx = (i + CAMS.length) % CAMS.length;
     const c = CAMS[camIdx];
-    const src = `https://www.youtube.com/embed/${c.id}?autoplay=1&mute=1&playsinline=1&rel=0`;
+    const src = `https://www.youtube.com/embed/${c.id}?autoplay=1&mute=1&playsinline=1&rel=0&controls=0&iv_load_policy=3`;
     if (frame.getAttribute('src') !== src) frame.src = src;
-    qs('#cam-place').innerHTML = `${c.label}<small>${c.sub}</small>`;
+    qs('#cam-place').innerHTML = `${esc(c.label)}<small>${esc(c.sub)}</small>`;
     document.querySelectorAll('#rotor-dots i').forEach((d, n) => d.classList.toggle('on', n === camIdx));
   }
   function resetCamTimer() { clearInterval(camTimer); camTimer = setInterval(() => showCam(camIdx + 1), CAM_ROTATE_MS); }
@@ -76,6 +77,8 @@
   loadCams().then(resetCamTimer); setInterval(loadCams, CAM_CHECK_MS);
 
   /* ---------- helpers ---------- */
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const quiet = (text) => `<div class="quiet">${text}</div>`;   // one calm line for an empty tile
   const fmtT = (hhmm) => { const [h, m] = (hhmm || '0:0').split(':').map(Number);
     return `${(h % 12) || 12}:${pad(m)}${h < 12 ? 'a' : 'p'}`; };
   const dayName = (d) => new Date(d + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short' });
@@ -92,7 +95,11 @@
 
   /* ---------- renderers ---------- */
   function renderWeather(wx, aq) {
-    if (!wx) return;
+    if (!wx || wx.error || wx.temp == null) {             // keep the last good reading; say so only if there never was one
+      if (!qs('.wthr').dataset.live) qs('.wthr .wx-main').innerHTML = quiet('Weather unavailable');
+      return;
+    }
+    qs('.wthr').dataset.live = '1';
     const ic = wxIcon(wx.code);
     const stat = (icon, v, k) => `<div class="wx-stat">${svg(icon)}<div><div class="v">${v}</div><div class="k">${k}</div></div></div>`;
     const fc = (wx.forecast || []).slice(1, 4).map(   // today is already the big number; show the next three
@@ -113,8 +120,8 @@
   function renderNext(ne) {
     if (!ne) return;
     const e = ne.event;
-    if (!e) { qs('.next .nu-event').innerHTML = '<div class="nu-title">Nothing scheduled</div>';
-      qs('#nu-modes').innerHTML = ''; qs('#nu-eta').textContent = ''; return; }
+    if (!e) { qs('#nu-when').textContent = ''; qs('.next .nu-title').textContent = 'Nothing scheduled';
+      qs('.next .nu-meta').textContent = ''; qs('#nu-modes').innerHTML = ''; qs('#nu-eta').textContent = ''; return; }
     qs('#nu-when').textContent = e.when || '';
     qs('.next .nu-title').textContent = e.summary || '';
     qs('.next .nu-meta').textContent = /^\s*-?\d+[°.]/.test(e.location || '') ? '' : (e.location || '');   // raw coordinates are noise
@@ -140,7 +147,8 @@
     if (!lt) return;
     const mins = lt.manhattan || [];
     qs('#l-next').textContent = mins[0] != null ? mins[0] : '–';
-    qs('#l-rest').innerHTML = mins.slice(1, 4).map(m => `<span class="pill">${m}<small> min</small></span>`).join('');
+    qs('#l-rest').innerHTML = mins.length ? mins.slice(1, 4).map(m => `<span class="pill">${m}<small> min</small></span>`).join('')
+      : '<span class="quiet">no trains listed</span>';
   }
 
   function renderFerry(fe) {
@@ -153,6 +161,7 @@
            <span style="font-family:'JetBrains Mono',monospace;font-size:19px;font-weight:600;font-variant-numeric:tabular-nums">${times}</span>
            ${last ? `<span style="margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0.06em;text-transform:uppercase;color:var(--ink-faint)">last <span style="font-size:14px;font-weight:700;color:var(--c-cyan)">${last}</span></span>` : ''}</div>`
       : '';
+    if (!pick('Wall St') && !pick('E 34 St')) { qs('.ferr .fr-body').innerHTML = quiet('No more ferries today'); return; }
     qs('.ferr .fr-body').innerHTML =
       `<div style="display:flex;flex-direction:column;justify-content:center;flex:1">
          ${row('↓', 'Wall St', pick('Wall St'), lastDest['Wall St'])}
@@ -162,8 +171,10 @@
 
   function renderBike(cb) {
     const sts = (cb && cb.stations) || [];
+    qs('.bike .head .sub').textContent = sts.length ? `${sts.length} stations` : '';
+    if (!sts.length) { qs('.bike .cb-row').innerHTML = quiet('No station data'); return; }
     qs('.bike .cb-row').innerHTML = sts.map(s =>
-      `<div class="cb-st"><div class="cb-name">${s.name}<small>${s.dist} mi</small></div>
+      `<div class="cb-st"><div class="cb-name">${esc(s.name)}<small>${s.dist} mi</small></div>
         <div class="cb-counts">
           <div class="cb-c ${s.bikes <= 2 ? 'low' : ''}"><span class="n">${s.bikes}</span><span class="l">Bikes</span></div>
           <div class="cb-c ebk"><span class="n">${svg('i-bolt')}${s.ebikes}</span><span class="l">E-bikes</span></div>
@@ -174,8 +185,8 @@
   function renderNitehawk(nh) {
     const films = ((nh && nh.films) || []).slice(0, 3);
     qs('.nite .rows').innerHTML = films.length ? films.map(f =>
-      `<div class="row"><div class="title">${f.title}</div><div class="times">` +
-      (f.showtimes || []).map(s => `<span${s.status === 'sold_out' ? ' style="opacity:.4;text-decoration:line-through"' : ''}>${s.time}</span>`).join('') +
+      `<div class="row"><div class="title">${esc(f.title)}</div><div class="times">` +
+      (f.showtimes || []).map(s => `<span${s.status === 'sold_out' ? ' style="opacity:.4;text-decoration:line-through"' : ''}>${esc(s.time)}</span>`).join('') +
       `</div></div>`).join('') : '<div class="row"><div class="title">No showtimes left today</div></div>';
   }
 
@@ -183,12 +194,11 @@
     const rows = [];
     ((cm && cm.venues) || []).forEach(v => (v.shows || []).forEach(s => rows.push({ title: s.title, venue: v.venue, time: s.time })));
     qs('.cmdy .rows').innerHTML = rows.length ? rows.slice(0, 4).map(r =>
-      `<div class="row"><div class="title">${r.title}<small>${r.venue}</small></div><div class="times"><span>${r.time}</span></div></div>`).join('')
+      `<div class="row"><div class="title">${esc(r.title)}<small>${esc(r.venue)}</small></div><div class="times"><span>${esc(r.time)}</span></div></div>`).join('')
       : '<div class="row"><div class="title">No shows tonight</div></div>';
   }
 
   const CAT = { game: '--c-blue', comedy: '--c-yellow', music: '--c-pink', theatre: '--c-violet', film: '--c-indigo', seasonal: '--c-green' };
-  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   function renderWeek(wk) {
     const picks = (wk && wk.picks) || [];
     qs('#wk-list').innerHTML = picks.length ? picks.map(p =>
@@ -204,14 +214,15 @@
   async function refresh() {
     try {
       const d = await (await fetch('/all', { cache: 'no-store' })).json();
-      renderWeather(d.weather, d.airquality);
-      renderNext(d.nextevent);
-      renderL(d.ltrain);
-      renderFerry(d.ferry);
-      renderBike(d.citibike);
-      renderNitehawk(d.nitehawk);
-      renderComedy(d.comedy);
-      renderWeek(d.picks);
+      const safe = (fn, ...a) => { try { fn(...a); } catch (e) { console.warn(fn.name + ' failed', e); } };   // one bad tile must not freeze the rest
+      safe(renderWeather, d.weather, d.airquality);
+      safe(renderNext, d.nextevent);
+      safe(renderL, d.ltrain);
+      safe(renderFerry, d.ferry);
+      safe(renderBike, d.citibike);
+      safe(renderNitehawk, d.nitehawk);
+      safe(renderComedy, d.comedy);
+      safe(renderWeek, d.picks);
     } catch (e) { console.warn('refresh failed', e); }
   }
   refresh();
