@@ -21,3 +21,8 @@ electron/dist/
 
 # personal
 feeds-verify/local_config.py
+
+# generated, personal
+feeds-verify/picks.json
+feeds-verify/webapp/preview.html
+feeds-verify/.env

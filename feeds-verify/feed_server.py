@@ -10,17 +10,18 @@
 
    Run:  ./.venv/bin/python feed_server.py   (binds 0.0.0.0:8090)
 """
+from zoneinfo import ZoneInfo
 import io, os, time, zipfile, csv, threading, datetime as dt
 import requests
-from flask import Flask, jsonify, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory
 from google.transit import gtfs_realtime_pb2
 import providers
 from nitehawk import get_showtimes, get_next_showtimes
-from comedy import get_comedy
+from comedy_lite import get_comedy   # POC: browserless drop-in (was `from comedy import get_comedy`)
 
 app = Flask(__name__)
 LAT, LON = 40.7222, -73.9573
-TZ = dt.timezone(dt.timedelta(hours=-4))  # America/New_York (EDT in June)
+TZ = ZoneInfo("America/New_York")  # real zone, so EST/EDT switch on their own
 
 # ----------------------------------------------------------------- weather
 WMO = {0:"Clear",1:"Mainly clear",2:"Partly cloudy",3:"Overcast",45:"Fog",48:"Rime fog",
@@ -28,14 +29,15 @@ WMO = {0:"Clear",1:"Mainly clear",2:"Partly cloudy",3:"Overcast",45:"Fog",48:"Ri
        65:"Heavy rain",71:"Light snow",73:"Snow",75:"Heavy snow",80:"Rain showers",
        81:"Rain showers",82:"Violent showers",95:"Thunderstorm",96:"Thunderstorm+hail"}
 
-@app.route("/weather")
-def weather():
+def _weather():
     url = ("https://api.open-meteo.com/v1/forecast?latitude=%s&longitude=%s"
            "&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m,relative_humidity_2m"
            "&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code,sunrise,sunset,uv_index_max"
            "&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=America/New_York&forecast_days=3"
            % (LAT, LON))
     j = requests.get(url, timeout=15).json()
+    if "current" not in j:   # Open-Meteo error payload, e.g. {"error":true,"reason":"Too many concurrent requests"}
+        raise RuntimeError("open-meteo: " + str(j.get("reason", j))[:80])
     c = j["current"]; d = j["daily"]
     days = [{"date": d["time"][i], "min": round(d["temperature_2m_min"][i]),
              "max": round(d["temperature_2m_max"][i]), "precip": d["precipitation_probability_max"][i],
@@ -44,13 +46,18 @@ def weather():
     wdir = dirs[round((c.get("wind_direction_10m", 0) % 360) / 45) % 8]
     uv = round(d.get("uv_index_max", [0])[0])
     uv_cat = "Low" if uv < 3 else "Moderate" if uv < 6 else "High" if uv < 8 else "Very High" if uv < 11 else "Extreme"
-    return jsonify({"temp": round(c["temperature_2m"]), "feels": round(c["apparent_temperature"]),
+    return {"temp": round(c["temperature_2m"]), "feels": round(c["apparent_temperature"]),
                     "humidity": c["relative_humidity_2m"], "wind": round(c["wind_speed_10m"]), "wind_dir": wdir,
                     "desc": WMO.get(c["weather_code"], "?"), "code": c["weather_code"],
                     "high": days[0]["max"], "low": days[0]["min"],
                     "uv": uv, "uv_cat": uv_cat,
                     "sunrise": d["sunrise"][0][-5:], "sunset": d["sunset"][0][-5:],
-                    "forecast": days, "updated": dt.datetime.now(TZ).strftime("%H:%M")})
+                    "forecast": days, "updated": dt.datetime.now(TZ).strftime("%H:%M")}
+
+@app.route("/weather")
+def weather():
+    # cache 10 min + serve last-good on a transient Open-Meteo error (e.g. rate limit)
+    return jsonify(_cached("weather", 600, _weather))
 
 # ------------------------------------------------------------------ L train
 @app.route("/ltrain")
@@ -184,15 +191,23 @@ def ferry():
 
 # ----------------------------------------------------- new widgets (round 2)
 _cache = {}
+_fail = {}            # key -> time of last failure (upstream backoff)
+_NEG_TTL = 120        # after a failure, wait this long before hitting the upstream again
 def _cached(key, ttl, fn):
     e = _cache.get(key)
-    if e and time.time() - e[0] < ttl:
+    now = time.time()
+    if e and now - e[0] < ttl:
         return e[1]
+    if now - _fail.get(key, 0) < _NEG_TTL:   # recently failed → don't hammer the upstream
+        if e:
+            return e[1]                      # serve last-good if we have it
+        raise RuntimeError(f"{key} upstream unavailable (cooling down)")
     try:
-        val = fn(); _cache[key] = (time.time(), val)
+        val = fn(); _cache[key] = (now, val)
         return val
     except Exception:
-        if e:            # stale-while-error: a transient upstream timeout shouldn't blank the widget
+        _fail[key] = now
+        if e:            # stale-while-error: a transient upstream blip shouldn't blank the widget
             return e[1]
         raise
 
@@ -214,6 +229,35 @@ def word():      return jsonify(_cached("word", 3600, providers.word_of_day))
 def history():   return jsonify(_cached("history", 3600, providers.on_this_day))
 @app.route("/nextevent")
 def nextevent(): return jsonify(_cached("nextevent", 180, providers.next_event))
+@app.route("/cams")
+def cams():      return jsonify(_cached("cams", 900, providers.cams))   # which live cams are up right now
+@app.route("/picks")
+def picks():     return jsonify(_cached("picks", 60, providers.picks))
+@app.route("/upcoming")
+def upcoming():  # timed events starting in the next N hours (for a script that sends time-to-leave alerts)
+    hours = max(1, min(24, request.args.get("hours", 4, type=int)))
+    return jsonify(_cached(f"upcoming:{hours}", 120, lambda: providers.upcoming_events(hours)))
+@app.route("/travel")
+def travel():    # /travel?dest=ADDRESS&arrive=ISO[&origin=lat,lon] -> minutes and leave-by per mode
+    dest, arrive = request.args.get("dest", "").strip(), request.args.get("arrive", "")
+    try:
+        when = dt.datetime.fromisoformat(arrive)
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=TZ)
+        origin = None
+        if request.args.get("origin"):
+            la, lo = (round(float(x), 3) for x in request.args["origin"].split(","))  # ~100 m, keeps the cache useful
+            origin = (la, lo)
+    except ValueError:
+        return jsonify({"error": "arrive must be an ISO time, origin lat,lon"}), 400
+    if not dest:
+        return jsonify({"error": "dest is required"}), 400
+    if len(_cache) > 400:   # travel keys are open-ended; drop the stale ones
+        cut = time.time() - 3600
+        for k in [k for k, v in _cache.items() if k.startswith("travel:") and v[0] < cut]:
+            _cache.pop(k, None)
+    return jsonify(_cached(f"travel:{dest}|{when.isoformat()}|{origin}", 240,
+                           lambda: providers.travel(dest, when, origin)))
 @app.route("/comedy")
 def comedy():  # cache-only — the ~2min Playwright scrape runs in the warmer thread, never on request
     e = _cache.get("comedy")
@@ -221,12 +265,17 @@ def comedy():  # cache-only — the ~2min Playwright scrape runs in the warmer t
 
 @app.route("/all")
 def all_feeds():
+    # only what the page draws; the other feeds keep their own endpoints
+    tiles = {"weather": weather, "ltrain": ltrain, "ferry": ferry, "nitehawk": nitehawk,
+             "citibike": citibike, "nextevent": nextevent, "comedy": comedy, "picks": picks}
+    out = {}
     with app.test_request_context():
-        return jsonify({"weather": weather().json, "ltrain": ltrain().json, "ferry": ferry().json,
-                        "nitehawk": nitehawk().json, "citibike": citibike().json,
-                        "airquality": airquality().json, "knicks": knicks().json, "events": events().json,
-                        "sports": sports().json, "word": word().json, "history": history().json,
-                        "nextevent": nextevent().json, "comedy": comedy().json})
+        for key, fn in tiles.items():
+            try:                       # one flaky tile must never blank the whole dashboard
+                out[key] = fn().json
+            except Exception as e:
+                out[key] = {"error": str(e)[:80]}
+    return jsonify(out)
 
 @app.route("/citycam")
 def citycam():
@@ -243,15 +292,13 @@ padding:3px 10px;border-radius:8px}</style></head>
 <iframe id=f allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
  allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>
 <script>
-var cams=[["z-jYdOIKcTQ","CAScdLG46NEQJ3yB","\\uD83D\\uDDFD Times Square"],
-          ["JPxiYF2fSC8","kFZZOaUWpTsQkV3L","\\uD83C\\uDF33 Bryant Park"],
-          ["DjdUEyjx8GM","sEgL6jRgTeyB_VW0","\\uD83C\\uDFEE Shinjuku, Tokyo"],
-          ["dfVK7ld38Ys","6RgiUpH6Z4-WdAVl","\\uD83D\\uDEA6 Shibuya, Tokyo"]];
+var cams=[];
 var i=0,f=document.getElementById('f'),l=document.getElementById('lbl');
-function show(){var c=cams[i];
- f.src="https://www.youtube.com/embed/"+c[0]+"?si="+c[1]+"&autoplay=1&mute=1&playsinline=1&rel=0";
- l.textContent=c[2];i=(i+1)%cams.length;}
-show();setInterval(show,45000);
+function show(){if(!cams.length){l.textContent="Cams offline";f.removeAttribute("src");return;}var c=cams[i%cams.length];
+ f.src="https://www.youtube.com/embed/"+c.id+"?autoplay=1&mute=1&playsinline=1&rel=0";
+ l.textContent=c.label;i=(i+1)%cams.length;}
+function load(){fetch("/cams").then(function(r){return r.json()}).then(function(d){cams=d.cams||[];show();}).catch(show);}
+load();setInterval(show,45000);setInterval(load,900000);
 </script></body></html>"""
     return app.response_class(html, mimetype="text/html")
 

@@ -116,12 +116,12 @@
     grid-template-rows:repeat(6,1fr);
     gap:14px;
     grid-template-areas:
-      "cam cam cam cam cam cam next next next ltrn ltrn ltrn"
-      "cam cam cam cam cam cam next next next ferr ferr ferr"
-      "cam cam cam cam cam cam bike bike bike bike bike bike"
-      "wthr wthr wthr wthr wthr wthr knck knck knck nysp nysp nysp"
-      "wthr wthr wthr wthr wthr wthr nite nite nite cmdy cmdy cmdy"
-      "wthr wthr wthr wthr wthr wthr word word word town town town";
+      "cam cam cam cam next next next next wthr wthr wthr wthr"
+      "cam cam cam cam next next next next wthr wthr wthr wthr"
+      "cam cam cam cam ltrn ltrn ltrn ltrn ferr ferr ferr ferr"
+      "week week week week week week week week bike bike bike bike"
+      "week week week week week week week week nite nite nite nite"
+      "week week week week week week week week cmdy cmdy cmdy cmdy";
   }
 
   /* ============ GLASS TILE ============ */
@@ -172,12 +172,9 @@
   .ltrn{ grid-area:ltrn; }
   .ferr{ grid-area:ferr; }
   .bike{ grid-area:bike; }
-  .knck{ grid-area:knck; }
-  .nysp{ grid-area:nysp; }
   .nite{ grid-area:nite; }
   .cmdy{ grid-area:cmdy; }
-  .word{ grid-area:word; }
-  .town{ grid-area:town; }
+  .week{ grid-area:week; }
 
   /* ============ LIVE CAM ============ */
   .cam{ --accent:var(--c-red); }
@@ -326,7 +323,6 @@
   .cb-c.low .n{ color:var(--st-late); }
 
   /* ============ SPORTS / ENTERTAINMENT shared list ============ */
-  .knck{ --accent:var(--c-orange); }
   .nysp{ --accent:var(--c-blue); }
   .nite{ --accent:var(--c-violet); }
   .cmdy{ --accent:var(--c-yellow); }
@@ -376,6 +372,43 @@
     width:66px; flex:none; }
   .at-name{ font-size:15px; font-weight:600; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .at-name small{ color:var(--ink-mute); font-weight:500; }
+
+  /* ============ THIS WEEK FOR YOU ============ */
+  .week{ --accent:var(--c-amber); }
+  .wk-list{ flex:1; min-height:0; display:grid; gap:9px; grid-template-columns:1fr 1fr; grid-auto-rows:1fr; }
+  .wk{ min-width:0; min-height:0; display:flex; align-items:center; gap:14px; padding:8px 14px;
+    background:rgba(255,255,255,0.035); border:1px solid var(--hairline-2); border-radius:15px; }
+  .wk-when{ flex:none; width:74px; font-family:'JetBrains Mono',monospace; line-height:1.3; }
+  .wk-when b{ display:block; font-size:13px; letter-spacing:0.12em; color:var(--cat); }
+  .wk-when span{ font-size:14px; font-weight:600; color:var(--ink-dim); font-variant-numeric:tabular-nums; }
+  .wk-body{ flex:1; min-width:0; }
+  .wk-title{ font-size:18px; font-weight:700; line-height:1.2; }
+  .wk-sub{ font-size:13.5px; color:var(--ink-mute); line-height:1.3; margin-top:3px; }
+  .wk-sub b{ color:var(--ink-dim); font-weight:600; }
+  .wk-side{ flex:none; display:flex; flex-direction:column; align-items:flex-end; gap:5px; }
+  .wk-price{ font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:600; color:var(--ink-dim); }
+  .wk-tag{ font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:600; letter-spacing:0.04em; padding:3px 8px; border-radius:8px;
+    background:color-mix(in oklab,var(--st-late) 18%, transparent); color:var(--st-late); white-space:nowrap; }
+  .wk-empty{ grid-column:1 / -1; align-self:center; text-align:center; font-size:14px; color:var(--ink-mute); }
+
+  /* ============ COMPACT TILES (weather is a third wide, bikes a third wide) ============ */
+  .wthr .wx-main{ flex-direction:column; gap:12px; }
+  .wthr .wx-now{ min-width:0; flex:1; }
+  .wthr .wx-cond{ gap:14px; }
+  .wthr .wx-cond svg{ width:54px; height:54px; }
+  .wthr .wx-temp{ font-size:68px; }
+  .wthr .wx-temp .deg{ font-size:32px; }
+  .wthr .wx-desc{ font-size:20px; margin-top:8px; }
+  .wthr .wx-feels{ font-size:14px; }
+  .wthr .wx-fc{ margin-top:0; gap:8px; flex:none; }
+  .wthr .fc{ padding:8px 6px; gap:4px; border-radius:13px; flex-direction:row; justify-content:center; }
+  .wthr .fc svg{ width:22px; height:22px; }
+  .wthr .fc .hi{ font-size:16px; } .wthr .fc .lo{ font-size:13px; }
+  .wthr .fc .t{ gap:5px; }
+  .bike .cb-row{ gap:9px; min-width:0; }
+  .bike .cb-st{ min-width:0; padding:6px 11px; gap:3px; }
+  .bike .cb-name small{ display:none; }
+  .mode .mleave .lk{ display:block; }
 
   /* ============ TWEAKS MOUNT ============ */
   #tweaks-root{ position:fixed; z-index:50; }
@@ -455,21 +488,11 @@
           <div class="wx-desc">Clear skies</div>
           <div class="wx-feels">Feels like <span data-f="72">72</span>° · High <span data-f="78">78</span>° / Low <span data-f="64">64</span>°</div>
         </div>
-        <div class="wx-side">
-          <div class="wx-stats">
-            <div class="wx-stat"><svg class="icon" viewBox="0 0 24 24"><use href="#i-drop"/></svg><div><div class="v">33%</div><div class="k">Humidity</div></div></div>
-            <div class="wx-stat"><svg class="icon" viewBox="0 0 24 24"><use href="#i-wind"/></svg><div><div class="v">7 mph</div><div class="k">Wind · SW</div></div></div>
-            <div class="wx-stat"><svg class="icon" viewBox="0 0 24 24"><use href="#i-gauge"/></svg><div><div class="v"><span class="aqi-pill">AQI 55</span></div><div class="k">Moderate</div></div></div>
-            <div class="wx-stat"><svg class="icon" viewBox="0 0 24 24"><use href="#i-rise"/></svg><div><div class="v">5:26a</div><div class="k">Sunrise</div></div></div>
-            <div class="wx-stat"><svg class="icon" viewBox="0 0 24 24"><use href="#i-set"/></svg><div><div class="v">8:21p</div><div class="k">Sunset</div></div></div>
-            <div class="wx-stat"><svg class="icon" viewBox="0 0 24 24"><use href="#i-sun"/></svg><div><div class="v">6 <span style="font-size:13px;color:var(--ink-mute);font-weight:600">High</span></div><div class="k">UV Index</div></div></div>
-          </div>
-          <div class="wx-fc">
+        <div class="wx-fc">
             <div class="fc"><span class="d">Wed</span><svg class="icon" viewBox="0 0 24 24" style="color:var(--c-amber)"><use href="#i-sun"/></svg><div class="t"><span class="hi"><span data-f="78">78</span>°</span><span class="lo"><span data-f="64">64</span>°</span></div></div>
             <div class="fc"><span class="d">Thu</span><svg class="icon" viewBox="0 0 24 24" style="color:var(--ink-dim)"><use href="#i-partly"/></svg><div class="t"><span class="hi"><span data-f="75">75</span>°</span><span class="lo"><span data-f="61">61</span>°</span></div></div>
             <div class="fc"><span class="d">Fri</span><svg class="icon" viewBox="0 0 24 24" style="color:var(--c-cyan)"><use href="#i-rain"/></svg><div class="t"><span class="hi"><span data-f="70">70</span>°</span><span class="lo"><span data-f="59">59</span>°</span></div></div>
           </div>
-        </div>
       </div>
     </section>
 
@@ -552,29 +575,9 @@
       </div>
     </section>
 
-    <!-- KNICKS -->
-    <section class="tile knck" style="--i:6">
-      <div class="head"><span class="dot"></span><span class="lbl">Knicks</span><span class="sub">next 2</span></div>
-      <div class="rows">
-        <div class="row"><span class="teamdot" style="background:var(--c-orange)"></span><span class="vs"><b>vs</b> Boston Celtics</span><span class="when"><b>Wed Jun 3</b>7:30p · MSG</span></div>
-        <div class="row"><span class="teamdot" style="background:var(--ink-mute)"></span><span class="vs"><b>@</b> Miami Heat</span><span class="when"><b>Sat Jun 6</b>8:00p · away</span></div>
-      </div>
-    </section>
-
-    <!-- NY SPORTS -->
-    <section class="tile nysp" style="--i:7">
-      <div class="head"><span class="dot"></span><span class="lbl">NY Sports</span></div>
-      <div class="rows">
-        <div class="sp-grid">
-          <div class="sp-team"><span class="tm"><i style="background:var(--c-blue)"></i>Yankees</span><span class="op">vs Red Sox</span><span class="tt">Tonight 7:05p</span></div>
-          <div class="sp-team"><span class="tm"><i style="background:var(--c-orange)"></i>Mets</span><span class="op">@ Braves</span><span class="tt">Tonight 7:20p</span></div>
-          <div class="sp-team"><span class="tm"><i style="background:var(--c-cyan)"></i>Rangers</span><span class="op">vs Devils</span><span class="tt">Oct 9 · pre</span></div>
-        </div>
-      </div>
-    </section>
 
     <!-- NITEHAWK -->
-    <section class="tile nite" style="--i:8">
+    <section class="tile nite" style="--i:7">
       <div class="head"><span class="chip-ic"><svg class="icon" viewBox="0 0 24 24"><use href="#i-ticket"/></svg></span><span class="lbl">Nitehawk · Williamsburg</span></div>
       <div class="rows bill">
         <div class="row"><div class="title">Dune: Part Two</div><div class="times"><span>6:40p</span><span>9:20p</span></div></div>
@@ -584,7 +587,7 @@
     </section>
 
     <!-- COMEDY -->
-    <section class="tile cmdy" style="--i:9">
+    <section class="tile cmdy" style="--i:10">
       <div class="head"><span class="chip-ic"><svg class="icon" viewBox="0 0 24 24"><use href="#i-mic"/></svg></span><span class="lbl">Comedy · tonight</span></div>
       <div class="rows bill">
         <div class="row"><div class="title">The Flop House Live<small>The Bell House</small></div><div class="times"><span>8:00p</span></div></div>
@@ -592,24 +595,12 @@
       </div>
     </section>
 
-    <!-- WORD OF THE DAY -->
-    <section class="tile word" style="--i:10">
-      <div class="head"><span class="chip-ic"><svg class="icon" viewBox="0 0 24 24"><use href="#i-book"/></svg></span><span class="lbl">Word of the Day</span></div>
-      <div class="wd-body">
-        <div class="wd-word">Petrichor<span class="pos">noun</span></div>
-        <div class="wd-ipa">/ˈpɛt.rɪ.kɔːr/</div>
-        <div class="wd-def">The pleasant, earthy scent produced when rain falls on dry soil — fitting, with showers due Friday.</div>
-      </div>
-    </section>
 
-    <!-- AROUND TOWN -->
-    <section class="tile town" style="--i:11">
-      <div class="head"><span class="chip-ic"><svg class="icon" viewBox="0 0 24 24"><use href="#i-pin"/></svg></span><span class="lbl">Around Town</span></div>
-      <div class="rows">
-        <div class="at-row"><span class="at-when">SAT 11a</span><span class="at-name">Smorgasburg <small>· Marsha P. Johnson Park</small></span></div>
-        <div class="at-row"><span class="at-when">SAT 8a</span><span class="at-name">McCarren Greenmarket <small>· Union Ave</small></span></div>
-        <div class="at-row"><span class="at-when">THU 9p</span><span class="at-name">Live Jazz <small>· Union Pool</small></span></div>
-      </div>
+
+    <!-- THIS WEEK FOR YOU -->
+    <section class="tile week" style="--i:6">
+      <div class="head"><span class="dot"></span><span class="lbl">This week for you</span><span class="sub" id="wk-sub"></span></div>
+      <div class="wk-list" id="wk-list"></div>
     </section>
 
   </main>

@@ -41,29 +41,39 @@
   tickClock(); setInterval(tickClock, 1000);
 
   /* ---------- live cam: rotation + clickable dots ---------- */
-  const CAMS = [
-    { id: 'z-jYdOIKcTQ', si: 'CAScdLG46NEQJ3yB', label: 'Times Square', sub: '42nd St & Broadway · New York' },
-    { id: 'JPxiYF2fSC8', si: 'kFZZOaUWpTsQkV3L', label: 'Bryant Park',  sub: 'Midtown · New York' },
-    { id: 'DjdUEyjx8GM', si: 'sEgL6jRgTeyB_VW0', label: 'Shinjuku',     sub: 'Kabukichō · Tokyo' },
-    { id: 'dfVK7ld38Ys', si: '6RgiUpH6Z4-WdAVl', label: 'Shibuya',      sub: 'Scramble Crossing · Tokyo' },
-  ];
-  const CAM_ROTATE_MS = 15 * 60 * 1000; // every 15 min
+  let CAMS = [];                         // filled from /cams: only streams that are live right now
+  const CAM_ROTATE_MS = 15 * 60 * 1000;  // every 15 min
+  const CAM_CHECK_MS = 15 * 60 * 1000;   // re-ask which cams are up
   let camIdx = 0, camTimer = null;
   function showCam(i) {
+    const frame = qs('#cam-frame');
+    if (!CAMS.length) {                  // nothing live: a calm tile, not a YouTube error
+      frame.removeAttribute('src'); frame.style.display = 'none';
+      qs('#cam-place').innerHTML = 'Cams offline<small>checking again in 15 min</small>';
+      return;
+    }
+    frame.style.display = '';
     camIdx = (i + CAMS.length) % CAMS.length;
     const c = CAMS[camIdx];
-    qs('#cam-frame').src = `https://www.youtube.com/embed/${c.id}?si=${c.si}&autoplay=1&mute=1&playsinline=1&rel=0`;
+    const src = `https://www.youtube.com/embed/${c.id}?autoplay=1&mute=1&playsinline=1&rel=0`;
+    if (frame.getAttribute('src') !== src) frame.src = src;
     qs('#cam-place').innerHTML = `${c.label}<small>${c.sub}</small>`;
     document.querySelectorAll('#rotor-dots i').forEach((d, n) => d.classList.toggle('on', n === camIdx));
   }
   function resetCamTimer() { clearInterval(camTimer); camTimer = setInterval(() => showCam(camIdx + 1), CAM_ROTATE_MS); }
-  (function initCam() {
+  async function loadCams() {
+    let next = CAMS;
+    try { next = (await (await fetch('/cams', { cache: 'no-store' })).json()).cams || []; } catch (e) { /* keep what we have */ }
+    const current = CAMS[camIdx] && CAMS[camIdx].id;
+    CAMS = next;
     qs('#rotor-dots').innerHTML = CAMS.map((c, n) =>
       `<i data-i="${n}" title="${c.label}" style="width:11px;height:11px;margin-left:7px;cursor:pointer"></i>`).join('');
     qs('#rotor-dots').querySelectorAll('i').forEach(d =>
       d.addEventListener('click', () => { showCam(+d.dataset.i); resetCamTimer(); }));
-    showCam(0); resetCamTimer();
-  })();
+    const keep = CAMS.findIndex(c => c.id === current);   // stay on the same cam if it is still up
+    showCam(keep >= 0 ? keep : 0);
+  }
+  loadCams().then(resetCamTimer); setInterval(loadCams, CAM_CHECK_MS);
 
   /* ---------- helpers ---------- */
   const fmtT = (hhmm) => { const [h, m] = (hhmm || '0:0').split(':').map(Number);
@@ -96,17 +106,7 @@
         <div class="wx-desc">${wx.desc}</div>
         <div class="wx-feels">Feels like ${wx.feels}° · High ${wx.high}° / Low ${wx.low}°</div>
       </div>
-      <div class="wx-side">
-        <div class="wx-stats">
-          ${stat('i-drop', wx.humidity + '%', 'Humidity')}
-          ${stat('i-wind', wx.wind + ' mph', 'Wind · ' + (wx.wind_dir || ''))}
-          ${stat('i-gauge', `<span class="aqi-pill">AQI ${aqi}</span>`, aqcat)}
-          ${stat('i-rise', fmtT(wx.sunrise), 'Sunrise')}
-          ${stat('i-set', fmtT(wx.sunset), 'Sunset')}
-          ${stat('i-sun', `${wx.uv} <span style="font-size:13px;color:var(--ink-mute);font-weight:600">${wx.uv_cat}</span>`, 'UV Index')}
-        </div>
-        <div class="wx-fc">${fc}</div>
-      </div>`;
+      <div class="wx-fc">${fc}</div>`;
   }
 
   function renderNext(ne) {
@@ -170,32 +170,6 @@
         </div></div>`).join('');
   }
 
-  function renderKnicks(k) {
-    const games = (k && k.games) || [];
-    qs('.knck .rows').innerHTML = games.length ? games.map(g => {
-      const p = (g.matchup || '').split(' @ ');
-      let vs = 'vs', opp = g.matchup || '';
-      if (p.length === 2) { if (/NY/.test(p[0])) { vs = '@'; opp = p[1]; } else { vs = 'vs'; opp = p[0]; } }
-      const det = g.state === 'in' ? `<b>LIVE</b>${g.score || ''}`
-        : (() => { const d = (g.detail || '').split(' at '); return `<b>${d[0] || ''}</b>${d[1] || ''}`; })();
-      return `<div class="row"><span class="teamdot" style="background:var(--c-orange)"></span>` +
-        `<span class="vs"><b>${vs}</b> ${opp}</span><span class="when">${det}</span></div>`;
-    }).join('') : '<div class="row"><span class="vs">No upcoming game</span></div>';
-  }
-
-  function renderSports(sp) {
-    const teams = (sp && sp.teams) || [];
-    const dot = { Yankees: 'var(--c-blue)', Mets: 'var(--c-orange)', Rangers: 'var(--c-cyan)' };
-    qs('.nysp .rows').innerHTML = '<div class="sp-grid">' + teams.map(t => {
-      const p = (t.matchup || '').split(' @ ');
-      let op = t.matchup || '';
-      if (p.length === 2) op = /NY[YMR]?$/.test(p[1].trim()) ? 'vs ' + p[0] : '@ ' + p[1];
-      const tt = t.state === 'in' ? (t.score || t.detail) : t.detail;
-      return `<div class="sp-team"><span class="tm"><i style="background:${dot[t.team] || 'var(--ink-mute)'}"></i>${t.team}</span>` +
-        `<span class="op">${t.state === 'off' ? '—' : op}</span><span class="tt">${tt}</span></div>`;
-    }).join('') + '</div>';
-  }
-
   function renderNitehawk(nh) {
     const films = ((nh && nh.films) || []).slice(0, 3);
     qs('.nite .rows').innerHTML = films.length ? films.map(f =>
@@ -212,19 +186,18 @@
       : '<div class="row"><div class="title">No shows tonight</div></div>';
   }
 
-  function renderWord(w) {
-    if (!w) return;
-    qs('.word .wd-body').innerHTML =
-      `<div class="wd-word">${cap(w.word)}<span class="pos">${w.pos}</span></div>` +
-      (w.ipa ? `<div class="wd-ipa">${w.ipa}</div>` : '') +
-      `<div class="wd-def">${w.definition}</div>`;
-  }
-
-  function renderTown(ev) {
-    const items = ((ev && ev.items) || []).slice(0, 4);
-    qs('.town .rows').innerHTML = items.map(e =>
-      `<div class="at-row"><span class="at-when">${e.emoji || ''} ${e.kind || ''}</span>` +
-      `<span class="at-name">${e.subject}<small> · ${e.source}</small></span></div>`).join('');
+  const CAT = { game: '--c-blue', comedy: '--c-yellow', music: '--c-pink', theatre: '--c-violet', film: '--c-indigo', seasonal: '--c-green' };
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  function renderWeek(wk) {
+    const picks = (wk && wk.picks) || [];
+    qs('#wk-sub').textContent = picks.length ? `${picks.length} picks · next 7 days` : '';
+    qs('#wk-list').innerHTML = picks.length ? picks.map(p =>
+      `<div class="wk" style="--cat:var(${CAT[p.category] || '--c-amber'})">` +
+      `<div class="wk-when"><b>${esc(p.day)}</b><span>${esc(p.time)}</span></div>` +
+      `<div class="wk-body"><div class="wk-title">${esc(p.title)}</div><div class="wk-sub"><b>${esc(p.venue)}</b> · ${esc(p.why)}</div></div>` +
+      `<div class="wk-side">${p.price_from != null ? `<span class="wk-price">$${esc(p.price_from)}+</span>` : ''}` +
+      `${p.tag ? `<span class="wk-tag">${esc(p.tag)}</span>` : ''}</div></div>`).join('')
+      : '<div class="wk-empty">No picks yet this week</div>';
   }
 
   /* ---------- fetch loop ---------- */
@@ -236,14 +209,18 @@
       renderL(d.ltrain);
       renderFerry(d.ferry);
       renderBike(d.citibike);
-      renderKnicks(d.knicks);
-      renderSports(d.sports);
       renderNitehawk(d.nitehawk);
       renderComedy(d.comedy);
-      renderWord(d.word);
-      renderTown(d.events);
+      renderWeek(d.picks);
     } catch (e) { console.warn('refresh failed', e); }
   }
   refresh();
   setInterval(refresh, 60000);
+
+  /* ---------- Esc closes the window, only when the Vicinae launcher opened us (?kiosk=1) ---------- */
+  // Kiosk Chrome ignores Esc/F11. window.close() is allowed here because the kiosk window
+  // has a single history entry; a normal browser tab without ?kiosk=1 is left alone.
+  if (new URLSearchParams(location.search).has('kiosk')) {
+    addEventListener('keydown', (e) => { if (e.key === 'Escape') window.close(); });
+  }
 })();

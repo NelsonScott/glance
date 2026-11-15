@@ -1,0 +1,8 @@
+# Browserless feed-service deps (POC branch poc/browserless-backend).
+# Same as ../requirements.txt MINUS playwright — comedy_lite.py replaces the
+# Playwright comedy scraper with plain requests + stdlib, so no Chromium is
+# needed. This is the dependency set for running the service on the Khadas/Pi.
+requests
+flask
+gtfs-realtime-bindings
+protobuf

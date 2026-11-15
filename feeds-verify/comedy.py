@@ -14,7 +14,7 @@ and from this project's own nitehawk.py:
   * graceful per-venue try/except — one venue failing never kills the others
   * on-failure debug capture (screenshot + a note) under comedy-debug/
   * result caching to comedy-cache.json (a full scrape is slow; see __main__ timing)
-  * TZ = America/New_York as UTC-4 and an _now() "HH:MM" stamp, like providers.py
+  * TZ = America/New_York (zoneinfo) and an _now() "HH:MM" stamp, like providers.py
   * "tonight, else roll to the next day with shows" — same idea as nitehawk's
     get_next_showtimes()
 
@@ -27,6 +27,7 @@ Venues:
 
 Runnable standalone: `python comedy.py` prints get_comedy() as JSON.
 """
+from zoneinfo import ZoneInfo
 import re
 import json
 import time
@@ -35,7 +36,7 @@ import datetime as dt
 
 from playwright.sync_api import sync_playwright
 
-TZ = dt.timezone(dt.timedelta(hours=-4))  # America/New_York (EDT), matches providers.py
+TZ = ZoneInfo("America/New_York")  # real zone, so EST/EDT switch on their own
 HERE = pathlib.Path(__file__).resolve().parent
 DEBUG_DIR = HERE / "comedy-debug"
 CACHE_FILE = HERE / "comedy-cache.json"

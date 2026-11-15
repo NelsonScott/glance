@@ -1,0 +1,4 @@
+[
+  {"date": "2026-01-01", "emoji": "\xf0\x9f\x8e\x9f\xef\xb8\x8f", "kind": "Music", "subject": "Example show", "source": "Some Venue \xc2\xb7 8pm"},
+  {"date": "2026-01-02", "emoji": "\xf0\x9f\x8f\x83", "kind": "Running", "subject": "Example run club", "source": "Local Park \xc2\xb7 Sat 9am"}
+]

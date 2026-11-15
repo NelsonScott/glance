@@ -8,14 +8,16 @@ any device on the LAN.
 
 ## Quick start
 
-```bash
-# 1. start the data/web service
-cd feeds-verify
-./.venv/bin/python feed_server.py        # serves http://localhost:8090
+The feed service runs on an always-on machine as a systemd user unit (`glance-feed.service`). Other devices only run a viewer pointed at it.
 
-# 2. open the dashboard
-open http://localhost:8090/              # any browser, or…
+```bash
+# on a viewer machine
+open http://<glance-host>:8090/           # any browser, or…
 open /Applications/Glance.app            # the packaged Mac app
+
+# local dev server instead:
+cd feeds-verify && ./.venv/bin/python feed_server.py   # serves http://localhost:8090
+GLANCE_URL=http://localhost:8090/ open /Applications/Glance.app
 ```
 
 LAN access from a phone / TV browser: `http://<glance-host>:8090/`
@@ -46,9 +48,13 @@ feed_server.py ──/all──► live.js ──renders──► tiles
 |---|---|
 | `feeds-verify/feed_server.py` | Flask service: `/all`, per-feed endpoints, web app, `/citycam` |
 | `feeds-verify/providers.py`   | Citi Bike · AQI · Knicks · NY sports · word · history · events · next-event/commute |
+| `/upcoming` · `/travel`       | calendar for the next hours and travel time per mode (`/travel?dest=&arrive=ISO[&origin=lat,lon]`); meant for a script that sends "time to leave" alerts |
+| `/picks`                      | "This week for you": the best-scored upcoming items from `feeds-verify/picks.json`, a git-ignored file written by a separate job (shape in `providers.py`) |
+| `/cams`                       | which of the configured YouTube live cams are live right now; the page rotates through only those |
 | `feeds-verify/nitehawk.py` · `comedy.py` | Playwright/HTTP scrapers for showtimes |
 | `feeds-verify/webapp/`        | the dashboard UI (`index.html`, `live.js`) |
-| `feeds-verify/verify_feeds.py` · `shoot_ha.py` | one-off feed test / screenshot helpers |
+| `feeds-verify/verify_feeds.py` | one-off feed test helper |
+| `feeds-verify/shoot_ha.py`     | vestigial — screenshot helper for the old HA Lovelace "Glance" dashboard, which this app replaced; not part of the active pipeline |
 | `electron/`                   | Electron app + `Glance.command` launcher; packaged into `dist/` |
 | `requirements.txt`            | Python deps (recreate venv: `python3 -m venv .venv && ./.venv/bin/pip install -r requirements.txt`) |
 

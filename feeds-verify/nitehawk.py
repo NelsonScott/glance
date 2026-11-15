@@ -3,10 +3,11 @@
    No JS / Playwright needed — the page is static HTML.
    URL pattern: https://nitehawkcinema.com/williamsburg/{YYYY-MM-DD}/{offset}/
 """
+from zoneinfo import ZoneInfo
 import re, html as ihtml, datetime as dt
 import requests
 
-TZ = dt.timezone(dt.timedelta(hours=-4))
+TZ = ZoneInfo("America/New_York")  # real zone, so EST/EDT switch on their own
 BASE = "https://nitehawkcinema.com/williamsburg"
 
 def _clean(s): return ihtml.unescape(re.sub(r"<[^>]+>", "", s)).strip()

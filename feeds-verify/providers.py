@@ -3,19 +3,23 @@
    Citi Bike · Air Quality · Knicks · Local events (Gmail) · MTA L alerts.
    Each returns a plain dict; failures degrade gracefully.
 """
+from zoneinfo import ZoneInfo
 import json, math, subprocess, os, re, time, html as ihtml, datetime as dt
 import xml.etree.ElementTree as ET
 import requests
 from google.transit import gtfs_realtime_pb2
 
 LAT, LON = 40.7222, -73.9573          # general North Williamsburg (weather/AQI)
-# Personal bits (the point Citi Bike distances are measured from, the pinned
-# station) live in local_config.py, which is git-ignored. See local_config.example.py.
+# Personal bits live in local_config.py, which is git-ignored (see local_config.example.py):
+# the point distances and commutes are measured from, the pinned Citi Bike station, and
+# which calendars feed Next Up.
 try:
-    from local_config import HOME_LAT, HOME_LON, PREFERRED_STATION
+    import local_config as _lc
 except ImportError:
-    HOME_LAT, HOME_LON, PREFERRED_STATION = LAT, LON, None
-TZ = dt.timezone(dt.timedelta(hours=-4))
+    _lc = None
+HOME_LAT, HOME_LON = getattr(_lc, "HOME_LAT", LAT), getattr(_lc, "HOME_LON", LON)
+PREFERRED_STATION = getattr(_lc, "PREFERRED_STATION", None)   # pinned first in the Citi Bike list
+TZ = ZoneInfo("America/New_York")  # real zone, so EST/EDT switch on their own
 UA = {"User-Agent": "Mozilla/5.0"}
 def _now(): return dt.datetime.now(TZ).strftime("%H:%M")
 
@@ -115,29 +119,93 @@ def _kind(frm):
             return val
     return ("📌", "Event")
 
-def events(n=6):
-    q = "newer_than:12d from:(%s)" % " OR ".join(EVENT_SENDERS)
-    try:
-        out = subprocess.run(["gog", "gmail", "search", q, "--max", "20", "--json"],
-                             capture_output=True, text=True, timeout=25)
-        threads = json.loads(out.stdout).get("threads", [])
-    except Exception as e:
-        return {"items": [], "error": str(e)[:80], "updated": _now()}
-    items, seen = [], set()
-    for t in threads:
-        frm = t.get("from", "")
-        src = frm.split("<")[0].strip().strip('"') or frm
-        subj = t.get("subject", "").strip()
-        key = subj.lower()[:40]
-        if not subj or key in seen:
+def _gmail_access_token():
+    r = requests.post("https://oauth2.googleapis.com/token", timeout=12, data={
+        "client_id": os.environ["GMAIL_CLIENT_ID"],
+        "client_secret": os.environ["GMAIL_CLIENT_SECRET"],
+        "refresh_token": os.environ["GMAIL_REFRESH_TOKEN"],
+        "grant_type": "refresh_token"})
+    r.raise_for_status()
+    return r.json()["access_token"]
+
+def _gmail_search(q, max_results=20, want=12):
+    """Gmail API equivalent of `gog gmail search` -> [{from, subject, date}].
+       Used in the HA add-on (GMAIL_* env set from add-on options); one thread per row."""
+    at = _gmail_access_token()
+    h = {"Authorization": f"Bearer {at}"}
+    base = "https://gmail.googleapis.com/gmail/v1/users/me"
+    lst = requests.get(f"{base}/messages", headers=h,
+                       params={"q": q, "maxResults": max_results}, timeout=15).json()
+    out, seen = [], set()
+    for m in lst.get("messages", []):
+        tid = m.get("threadId")
+        if tid in seen:
             continue
-        seen.add(key)
-        emoji, kind = _kind(frm)
-        items.append({"source": src, "subject": subj, "date": t.get("date", "")[:10],
-                      "emoji": emoji, "kind": kind})
-        if len(items) >= n:
+        seen.add(tid)
+        msg = requests.get(f"{base}/messages/{m['id']}", headers=h, timeout=12,
+                           params={"format": "metadata",
+                                   "metadataHeaders": ["From", "Subject", "Date"]}).json()
+        hdrs = {d["name"].lower(): d["value"] for d in msg.get("payload", {}).get("headers", [])}
+        ms = msg.get("internalDate")
+        date = dt.datetime.fromtimestamp(int(ms) / 1000, TZ).strftime("%Y-%m-%d") if ms else ""
+        out.append({"from": hdrs.get("from", ""), "subject": hdrs.get("subject", ""), "date": date})
+        if len(out) >= want:
             break
-    return {"items": items, "updated": _now()}
+    return out
+
+def events(n=6):
+    items, seen = [], set()
+
+    # --- curated Around Town events (around_town.json, filtered to upcoming) ---
+    try:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "around_town.json")
+        with open(path) as f:
+            curated = json.load(f)
+        today = dt.datetime.now(TZ).date()
+        upcoming = []
+        for ev in curated:
+            try:
+                d = dt.date.fromisoformat(ev.get("date", "")[:10])
+            except Exception:
+                continue
+            if d >= today:
+                upcoming.append((d, ev))
+        upcoming.sort(key=lambda x: x[0])
+        for _, ev in upcoming:
+            key = (ev.get("subject", "").lower()[:40])
+            if key in seen:
+                continue
+            seen.add(key)
+            items.append({"emoji": ev.get("emoji", ""), "kind": ev.get("kind", ""),
+                          "subject": ev.get("subject", ""), "source": ev.get("source", "")})
+    except Exception:
+        pass  # curated list missing/broken — fall through to Gmail only
+
+    # --- Gmail-discovered events, appended after curated (never crash on dead token) ---
+    try:
+        q = "newer_than:12d from:(%s)" % " OR ".join(EVENT_SENDERS)
+        if os.environ.get("GMAIL_REFRESH_TOKEN"):     # HA add-on: read-only Gmail API
+            threads = _gmail_search(q, 20)
+        else:                                          # Mac/dev fallback: gog CLI
+            out = subprocess.run(["gog", "gmail", "search", q, "--max", "20", "--json"],
+                                 capture_output=True, text=True, timeout=25)
+            threads = json.loads(out.stdout).get("threads", [])
+        for t in threads:
+            if len(items) >= n:
+                break
+            frm = t.get("from", "")
+            src = frm.split("<")[0].strip().strip('"') or frm
+            subj = t.get("subject", "").strip()
+            key = subj.lower()[:40]
+            if not subj or key in seen:
+                continue
+            seen.add(key)
+            emoji, kind = _kind(frm)
+            items.append({"source": src, "subject": subj, "emoji": emoji, "kind": kind})
+    except Exception:
+        pass  # dead Gmail token / no gog CLI — curated list is enough
+
+    return {"items": items[:n], "updated": _now()}
 
 # --------------------------------------------------------------- L alerts
 def l_alerts():
@@ -152,6 +220,12 @@ def l_alerts():
                 continue
             a = e.alert
             if not any(ie.route_id == "L" for ie in a.informed_entity):
+                continue
+            # Only what is in effect now or starts within 2 hours. The feed also lists planned
+            # work for later in the week, which read as if the L were broken right now.
+            now = time.time()
+            if a.active_period and not any(p.start <= now + 7200 and (not p.end or now < p.end)
+                                           for p in a.active_period):
                 continue
             hdr = (a.header_text.translation[0].text if a.header_text.translation else "").strip()
             if hdr and hdr not in msgs:
@@ -191,30 +265,84 @@ def _espn_next(slug, label):
 def sports():
     return {"teams": [_espn_next("baseball/mlb/teams/nyy", "Yankees"),
                       _espn_next("baseball/mlb/teams/nym", "Mets"),
-                      _espn_next("hockey/nhl/teams/nyr",   "Rangers")],
+                      _espn_next("hockey/nhl/teams/nyr",   "Rangers"),
+                      _espn_next("basketball/nba/teams/ny", "Knicks")],
             "updated": _now()}
 
 # ----------------------------------------------------- word of the day
 # Curated interesting words; one per day (by day-of-year), defined via keyless dictionary API.
-WORDS = ["petrichor", "sonorous", "ephemeral", "serendipity", "defenestration", "limerence",
-         "sonder", "susurrus", "mellifluous", "halcyon", "ineffable", "vellichor", "saudade",
-         "apricity", "gloaming", "numinous", "eunoia", "psithurism", "clinomania", "nyctophilia",
-         "sempiternal", "luminescence", "effervescent", "quintessence", "epiphany", "labyrinthine",
-         "nebulous", "ethereal", "incandescent", "perspicacious", "sanguine", "ebullient",
-         "mercurial", "lugubrious", "obstreperous", "fastidious", "querulous", "taciturn",
-         "verdant", "wanderlust", "zephyr", "aurora", "solitude", "reverie", "cascade",
-         "evanescent", "tessellate", "umbra", "vesper", "wistful"]
+# Curated words paired with concise definitions. The free dictionary API lacks many of
+# these coined/obscure words (sonder, vellichor, limerence, …), so definitions are bundled
+# here as the source of truth; the API is queried only for optional pronunciation/part-of-
+# speech. Insertion order is the rotation order (one word per day-of-year) — keep it stable.
+WORD_DEFS = {
+    "petrichor": "the earthy scent produced when rain falls on dry soil",
+    "sonorous": "deep, full, and resonant in sound",
+    "ephemeral": "lasting for a very short time; fleeting",
+    "serendipity": "the occurrence of happy or beneficial discoveries by chance",
+    "defenestration": "the act of throwing someone or something out of a window",
+    "limerence": "the involuntary state of intense romantic infatuation and longing for another person",
+    "sonder": "the realization that each passerby is living a life as vivid and complex as your own",
+    "susurrus": "a soft, whispering or rustling sound",
+    "mellifluous": "sweet and smooth to the ear; pleasingly flowing",
+    "halcyon": "denoting a past time that was idyllically happy and peaceful",
+    "ineffable": "too great or beautiful to be expressed in words",
+    "vellichor": "the wistful, melancholy atmosphere of a used bookstore",
+    "saudade": "a deep, bittersweet longing for something or someone absent",
+    "apricity": "the warmth of the sun in winter",
+    "gloaming": "the soft light of twilight; dusk",
+    "numinous": "having a strong spiritual or otherworldly, awe-inspiring quality",
+    "eunoia": "beautiful thinking; a well or healthy mind",
+    "psithurism": "the sound of wind whispering through the trees",
+    "clinomania": "an excessive desire to stay in bed",
+    "nyctophilia": "a love of night or darkness",
+    "sempiternal": "everlasting and unchanging; eternal",
+    "luminescence": "a soft emission of light not caused by heat",
+    "effervescent": "bubbly and vivacious; full of lively high spirits",
+    "quintessence": "the most perfect or typical example of a quality or class",
+    "epiphany": "a sudden, striking moment of realization or insight",
+    "labyrinthine": "intricate and confusing, like a maze",
+    "nebulous": "vague, hazy, or ill-defined",
+    "ethereal": "delicate and light, seeming almost too perfect for this world",
+    "incandescent": "glowing with intense heat or light; brilliantly radiant",
+    "perspicacious": "having keen insight and sharp understanding",
+    "sanguine": "cheerfully optimistic, especially in a difficult situation",
+    "ebullient": "cheerful and bubbling over with energy",
+    "mercurial": "prone to sudden, unpredictable changes of mood",
+    "lugubrious": "looking or sounding mournful and dismal",
+    "obstreperous": "noisy and difficult to control",
+    "fastidious": "meticulous, very attentive to detail, and hard to please",
+    "querulous": "complaining in a petulant or whining manner",
+    "taciturn": "reserved and saying little; uncommunicative",
+    "verdant": "lush and green with vegetation",
+    "wanderlust": "a strong desire to travel and explore the world",
+    "zephyr": "a soft, gentle breeze",
+    "aurora": "a natural light display in the sky; also, the dawn",
+    "solitude": "the peaceful state of being alone",
+    "reverie": "a state of pleasant, dreamy musing",
+    "cascade": "a small waterfall; something that happens in a chain of stages",
+    "evanescent": "quickly fading from sight or memory; fleeting",
+    "tessellate": "to cover a surface with repeated shapes leaving no gaps",
+    "umbra": "the fully shaded inner region of a shadow",
+    "vesper": "an evening prayer or song; also, the evening star",
+    "wistful": "full of vague, regretful longing",
+}
+WORDS = list(WORD_DEFS)  # rotation order = insertion order
+WORD_OVERRIDE = {"2026-06-04": "halcyon"}  # one-off manual picks by date; auto-reverts the next day
 def word_of_day():
-    word = WORDS[dt.datetime.now(TZ).timetuple().tm_yday % len(WORDS)]
-    try:
-        d = requests.get(f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}", timeout=12).json()
-        meaning = d[0]["meanings"][0]
-        ipa = d[0].get("phonetic") or next((p.get("text") for p in d[0].get("phonetics", []) if p.get("text")), "")
-        return {"word": word, "pos": meaning.get("partOfSpeech", ""), "ipa": ipa,
-                "definition": meaning["definitions"][0]["definition"][:200], "updated": _now()}
-    except Exception as e:
-        return {"word": word, "pos": "", "ipa": "", "definition": "(definition unavailable)",
-                "error": str(e)[:60], "updated": _now()}
+    today = dt.datetime.now(TZ).date().isoformat()
+    word = WORD_OVERRIDE.get(today) or WORDS[dt.datetime.now(TZ).timetuple().tm_yday % len(WORDS)]
+    pos = ipa = ""
+    try:  # best-effort pronunciation/part-of-speech; never let the API fail the tile
+        d = requests.get(f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}", timeout=8).json()
+        if isinstance(d, list) and d:
+            m = d[0]["meanings"][0]
+            pos = m.get("partOfSpeech", "")
+            ipa = d[0].get("phonetic") or next((p.get("text") for p in d[0].get("phonetics", []) if p.get("text")), "")
+    except Exception:
+        pass
+    return {"word": word, "pos": pos, "ipa": ipa,
+            "definition": WORD_DEFS.get(word, "(definition unavailable)"), "updated": _now()}
 
 # ----------------------------------------------------- on this day (history)
 def on_this_day():
@@ -244,7 +372,118 @@ def _gmaps_key():
     except Exception:
         return None
 
+# Which HA calendars Next Up should consider (entity_ids). Empty set = all calendars.
+# Kept to the ones with real plans-you'd-go-to; excludes birthdays/holidays (also all-day,
+# so already skipped), trash/workouts/miami/family.
+NEXT_EVENT_CALENDARS = set(getattr(_lc, "NEXT_EVENT_CALENDARS", ()))   # HA entity ids; empty = all
+
+# Direct Google Calendar equivalent of NEXT_EVENT_CALENDARS above (same two calendars,
+# addressed by their real Google Calendar IDs instead of HA entity_ids). Partiful shows
+# up as an ordinary imported secondary calendar in the same Google account, not a
+# separate integration, so both are reachable with one OAuth grant.
+NEXT_EVENT_GCAL_IDS = list(getattr(_lc, "NEXT_EVENT_GCAL_IDS", ["primary"]))
+
+def _gcal_access_token():
+    r = requests.post("https://oauth2.googleapis.com/token", timeout=12, data={
+        "client_id": os.environ["GMAIL_CLIENT_ID"],
+        "client_secret": os.environ["GMAIL_CLIENT_SECRET"],
+        "refresh_token": os.environ["GCAL_REFRESH_TOKEN"],
+        "grant_type": "refresh_token"})
+    r.raise_for_status()
+    return r.json()["access_token"]
+
+def _gcal_events(time_min, time_max, max_results=10):
+    """Timed events between two moments on the allowlisted Google calendars, soonest first.
+       Skips all-day events, cancelled ones and ones you declined."""
+    at = _gcal_access_token()
+    h = {"Authorization": f"Bearer {at}"}
+    params = {"timeMin": time_min.isoformat(), "timeMax": time_max.isoformat(),
+              "singleEvents": "true", "orderBy": "startTime", "maxResults": max_results}
+    out = []
+    for cal_id in NEXT_EVENT_GCAL_IDS:
+        try:
+            url = f"https://www.googleapis.com/calendar/v3/calendars/{requests.utils.quote(cal_id, safe='')}/events"
+            evs = requests.get(url, headers=h, params=params, timeout=12).json().get("items", [])
+        except Exception:
+            continue
+        for e in evs:
+            s = (e.get("start") or {}).get("dateTime")
+            if not s or e.get("status") == "cancelled":   # all-day events have only a date
+                continue
+            if any(a.get("self") and a.get("responseStatus") == "declined" for a in e.get("attendees", [])):
+                continue
+            out.append({"id": e.get("id", ""), "summary": e.get("summary", "(busy)"),
+                        "start": dt.datetime.fromisoformat(s), "location": e.get("location", "") or ""})
+    out.sort(key=lambda e: e["start"])
+    return out
+
+def _next_cal_event_google():
+    """Soonest upcoming timed event, straight from the Google Calendar API —
+       no Home Assistant involved. Same OAuth client as the Gmail tile, just with
+       calendar.readonly added; GCAL_REFRESH_TOKEN is its own grant (separate from
+       GMAIL_REFRESH_TOKEN, same client_id/secret)."""
+    now = dt.datetime.now(TZ)
+    for e in _gcal_events(now, now + dt.timedelta(days=14)):
+        if e["start"] > now:
+            return e
+    return None
+
+def upcoming_events(hours=4):
+    """Timed events that start in the next `hours` hours (for a script that sends time-to-leave alerts)."""
+    now = dt.datetime.now(TZ)
+    evs = [e for e in _gcal_events(now, now + dt.timedelta(hours=hours), 20) if e["start"] > now]
+    return {"events": [{"id": e["id"], "summary": e["summary"], "location": e["location"],
+                        "start": e["start"].isoformat(),
+                        "mins_until": round((e["start"] - now).total_seconds() / 60)} for e in evs],
+            "updated": _now()}
+
+def _next_cal_event_ha(token, base=None):
+    """Soonest upcoming timed event across the allowlisted Home Assistant calendars.
+       HA owns the Google OAuth; we just read calendar.* over HA's core REST API.
+       base defaults to the supervisor-proxied path (HA add-on mode); pass a real
+       HA URL + long-lived token (HA_URL/HA_TOKEN) when running as a standalone service."""
+    base = base or "http://supervisor/core/api"
+    h = {"Authorization": f"Bearer {token}"}
+    now = dt.datetime.now(TZ)
+    cals = requests.get(f"{base}/calendars", headers=h, timeout=12).json()
+    params = {"start": now.isoformat(), "end": (now + dt.timedelta(days=14)).isoformat()}
+    best = None
+    for c in cals:
+        eid = c.get("entity_id")
+        if not eid or (NEXT_EVENT_CALENDARS and eid not in NEXT_EVENT_CALENDARS):
+            continue
+        try:
+            evs = requests.get(f"{base}/calendars/{eid}", headers=h, params=params, timeout=12).json()
+        except Exception:
+            continue
+        for e in evs if isinstance(evs, list) else []:
+            s = e.get("start")
+            if isinstance(s, dict):
+                s = s.get("dateTime") or s.get("date")
+            if not s or "T" not in s:   # skip all-day (holidays/birthdays)
+                continue
+            try:
+                start = dt.datetime.fromisoformat(s)
+            except ValueError:
+                continue
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=TZ)
+            if start > now and (best is None or start < best["start"]):
+                best = {"summary": e.get("summary", "(busy)"), "start": start,
+                        "location": e.get("location", "") or ""}
+    return best
+
 def _next_cal_event():
+    if os.environ.get("GCAL_REFRESH_TOKEN"):   # preferred: direct Google Calendar API, no HA needed
+        return _next_cal_event_google()
+    token = os.environ.get("SUPERVISOR_TOKEN")
+    if token:   # running inside Home Assistant — read HA's calendars via the supervisor proxy
+        return _next_cal_event_ha(token)
+    ha_token = os.environ.get("HA_TOKEN")
+    if ha_token:   # standalone service (e.g. PC systemd unit) — talk to HA's real REST API
+        base = os.environ.get("HA_URL", "http://homeassistant.local:8123").rstrip("/") + "/api"
+        return _next_cal_event_ha(ha_token, base=base)
+    # Mac/dev fallback: the gog CLI
     out = subprocess.run(["gog", "calendar", "events", "--max", "8", "--json"],
                          capture_output=True, text=True, timeout=25)
     now = dt.datetime.now(TZ)
@@ -275,6 +514,80 @@ def _osrm_min(profile, o, d):
     r = requests.get(f"https://{host}/{o[1]},{o[0]};{d[1]},{d[0]}?overview=false", timeout=12).json()
     return round(r["routes"][0]["duration"] / 60) if r.get("routes") else None
 
+# (google mode, key, label, buffer minutes). The buffer covers shoes-on / waiting for the car.
+TRAVEL_MODES = [("transit", "train", "🚆 Train", 2), ("driving", "car", "🚗 Uber", 5),
+                ("bicycling", "bike", "🚲 e-bike", 0), ("walking", "walk", "🚶 Walk", 0)]
+
+def _clock(t): return t.astimezone(TZ).strftime("%-I:%M %p")
+
+def _transit_detail(leg):
+    """'L from Bedford Av 5:58 PM, then A to 59 St-Columbus Circle' from a Directions transit leg."""
+    rides = [s["transit_details"] for s in leg.get("steps", []) if s.get("transit_details")]
+    if not rides:
+        return ""
+    def name(t): return t["line"].get("short_name") or t["line"].get("name") or "train"
+    first = rides[0]
+    out = f'{name(first)} from {first["departure_stop"]["name"]} {first["departure_time"]["text"]}'
+    for t in rides[1:]:
+        out += f", then {name(t)}"
+    return out + f' to {rides[-1]["arrival_stop"]["name"]}'
+
+def travel(dest, arrive, origin=None, keys=None):
+    """How long it takes to reach `dest` by `arrive` (aware datetime), per mode, and when to leave.
+       origin is (lat, lon), default home. Train times come from the real timetable: the leave-by
+       is when you must walk out to catch the last train that still arrives on time, not just
+       arrival minus ride length. Needs GOOGLE_MAPS_KEY; without it, a rough OSRM estimate."""
+    origin = origin or (HOME_LAT, HOME_LON)
+    now = dt.datetime.now(TZ)
+    key = _gmaps_key()
+    modes, end = [], None
+    if key:  # Google Directions accepts the address string directly — no Geocoding API needed
+        for gmode, mkey, label, buf in TRAVEL_MODES:
+            if keys and mkey not in keys:
+                continue
+            try:
+                r = requests.get("https://maps.googleapis.com/maps/api/directions/json",
+                                 params={"origin": f"{origin[0]},{origin[1]}", "destination": dest,
+                                         "mode": gmode, "arrival_time": int(arrive.timestamp()),
+                                         "key": key}, timeout=12).json()
+                leg = r["routes"][0]["legs"][0]
+            except Exception:
+                continue
+            end = end or leg.get("end_location")
+            ride = round(leg["duration"]["value"] / 60)
+            if gmode == "bicycling":
+                ride = round(ride * 0.75)  # e-bike faster than pedal
+            m = {"mode": label, "key": mkey, "mins": ride + buf,
+                 "meters": leg.get("distance", {}).get("value")}
+            dep = (leg.get("departure_time") or {}).get("value")
+            if gmode == "transit" and dep:   # timetable: leave for THAT train
+                m["leave_at"] = dt.datetime.fromtimestamp(dep, TZ) - dt.timedelta(minutes=buf)
+                m["detail"] = _transit_detail(leg)
+            else:
+                m["leave_at"] = arrive - dt.timedelta(minutes=m["mins"])
+            modes.append(m)
+    else:  # keyless fallback: Nominatim geocode + OSRM
+        d = _geocode(dest, None)
+        if d:
+            end = {"lat": d[0], "lng": d[1]}
+            car = _osrm_min("car", origin, d); bike = _osrm_min("bike", origin, d)
+            if car: modes.append({"mode": "🚗 Uber", "key": "car", "mins": car + 5})
+            if bike: modes.append({"mode": "🚲 e-bike", "key": "bike", "mins": round(bike * 0.75)})
+            if car: modes.append({"mode": "🚆 Train*", "key": "train", "mins": round(car * 1.6)})  # rough est (no key)
+            for m in modes:
+                m["leave_at"] = arrive - dt.timedelta(minutes=m["mins"])
+            if keys:
+                modes = [m for m in modes if m["key"] in keys]
+    # leave-by + urgency color per mode
+    for m in modes:
+        leave_in = round((m["leave_at"] - now).total_seconds() / 60)
+        m["leave_by"] = _clock(m["leave_at"])
+        m["leave_at"] = m["leave_at"].isoformat()
+        m["leave_in_min"] = leave_in
+        m["color"] = "green" if leave_in > 30 else "yellow" if leave_in > 10 else "red"
+    return {"dest": dest, "arrive": arrive.isoformat(), "modes": modes,
+            "dest_lat": end and end.get("lat"), "dest_lon": end and end.get("lng"), "updated": _now()}
+
 def next_event():
     try:
         ev = _next_cal_event()
@@ -285,43 +598,74 @@ def next_event():
     now = dt.datetime.now(TZ)
     start = ev["start"]
     res = {"event": {"summary": ev["summary"], "location": ev["location"],
-                     "when": start.strftime("%a %-I:%M %p"),
+                     "when": start.astimezone(TZ).strftime("%a %-I:%M %p"),
                      "mins_until": round((start - now).total_seconds() / 60)},
            "modes": [], "updated": _now()}
     if not ev["location"]:
         return res
-    key = _gmaps_key()
-    origin = (HOME_LAT, HOME_LON)
-    modes = []
-    if key:  # Google Directions accepts the address string directly — no Geocoding API needed
-        for gmode, label, buf in [("transit", "🚆 Train", 2), ("driving", "🚗 Uber", 5), ("bicycling", "🚲 e-bike", 0)]:
-            try:
-                r = requests.get("https://maps.googleapis.com/maps/api/directions/json",
-                                 params={"origin": f"{origin[0]},{origin[1]}",
-                                         "destination": ev["location"], "mode": gmode,
-                                         "arrival_time": int(start.timestamp()), "key": key}, timeout=12).json()
-                leg = r["routes"][0]["legs"][0]
-                mins = round(leg["duration"]["value"] / 60)
-                if gmode == "bicycling":
-                    mins = round(mins * 0.75)  # e-bike faster than pedal
-                modes.append({"mode": label, "mins": mins + buf})
-            except Exception:
-                pass
-    else:  # keyless fallback: Nominatim geocode + OSRM
-        dest = _geocode(ev["location"], None)
-        if dest:
-            car = _osrm_min("car", origin, dest); bike = _osrm_min("bike", origin, dest)
-            if car: modes.append({"mode": "🚗 Uber", "mins": car + 5})
-            if bike: modes.append({"mode": "🚲 e-bike", "mins": round(bike * 0.75)})
-            if car: modes.append({"mode": "🚆 Train*", "mins": round(car * 1.6)})  # rough est (no key)
-    # leave-by + urgency color per mode
-    for m in modes:
-        leave_in = round((start - now).total_seconds() / 60) - m["mins"]
-        m["leave_by"] = (start - dt.timedelta(minutes=m["mins"])).strftime("%-I:%M %p")
-        m["leave_in_min"] = leave_in
-        m["color"] = "green" if leave_in > 30 else "yellow" if leave_in > 10 else "red"
-    res["modes"] = modes
+    res["modes"] = travel(ev["location"], start, keys=("train", "car", "bike"))["modes"]  # the tile has three rows
     return res
+
+# -------------------------------------------------------------- live cams
+# YouTube live streams end and get new ids without warning, so the page asks which of
+# these are live right now and rotates through only those. Order = rotation order;
+# the last two are spares that fill in when an earlier one is down.
+CAMS = [
+    {"id": "ZxCeWQ3Lcig", "label": "Times Square", "sub": "Broadway & 7th Av · New York"},
+    {"id": "l7b5RFAkKhY", "label": "NYC Harbor", "sub": "Brooklyn · New York"},
+    {"id": "DjdUEyjx8GM", "label": "Shinjuku", "sub": "Kabukichō · Tokyo"},
+    {"id": "dfVK7ld38Ys", "label": "Shibuya", "sub": "Scramble Crossing · Tokyo"},
+    {"id": "tErYxn2UM5Y", "label": "Brooklyn Bridge", "sub": "East River · New York"},
+    {"id": "KHy_n-EMWY8", "label": "Times Square Crossroads", "sub": "Midtown · New York"},
+]
+def _cam_live(vid):
+    """True/False from the watch page, or None when the check itself failed."""
+    try:
+        html = requests.get(f"https://www.youtube.com/watch?v={vid}", timeout=12,
+                            headers={**UA, "Accept-Language": "en-US"}).text
+    except Exception:
+        return None
+    if '"isLiveNow":' not in html:
+        return None                      # consent wall or layout change: unknown, not dead
+    return '"isLiveNow":true' in html and '"playableInEmbed":false' not in html
+
+def cams(n=4):
+    checked = [(c, _cam_live(c["id"])) for c in CAMS]
+    live = [c for c, ok in checked if ok]
+    if not live and all(ok is None for _, ok in checked):
+        live = CAMS[:n]                  # could not check anything: show the usual ones
+    return {"cams": live[:n], "down": [c["label"] for c, ok in checked if ok is False], "updated": _now()}
+
+# ------------------------------------------------------ this week for you
+# picks.json is written by a separate job (it is personal and git-ignored). Shape:
+# {"picks": [{"title", "when_iso", "venue", "why", "price_from", "tag", "category", "score"}]}
+PICKS_FILE = os.environ.get("PICKS_FILE") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "picks.json")
+def picks(n=6):
+    """The n best-scored things in the next 7 days that have not started, in time order."""
+    try:
+        with open(PICKS_FILE) as f:
+            data = json.load(f)
+    except Exception:
+        return {"picks": [], "updated": _now()}
+    now = dt.datetime.now(TZ)
+    live = []
+    for p in data.get("picks", []):
+        try:
+            when = dt.datetime.fromisoformat(p["when_iso"])
+        except (KeyError, ValueError, TypeError):
+            continue
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=TZ)
+        if now < when <= now + dt.timedelta(days=7):
+            live.append((when.astimezone(TZ), p))
+    top = sorted(sorted(live, key=lambda x: -(x[1].get("score") or 0))[:n], key=lambda x: x[0])
+    out = []
+    for when, p in top:
+        day = ("TONIGHT" if when.hour >= 17 else "TODAY") if when.date() == now.date() else when.strftime("%a").upper()
+        out.append({"day": day, "time": when.strftime("%-I:%M") + ("a" if when.hour < 12 else "p"),
+                    "title": p.get("title", ""), "venue": p.get("venue", ""), "why": p.get("why", ""),
+                    "price_from": p.get("price_from"), "tag": p.get("tag"), "category": p.get("category")})
+    return {"picks": out, "generated": data.get("generated"), "updated": _now()}
 
 if __name__ == "__main__":
     for fn in (citibike, airquality, knicks, events, l_alerts,
