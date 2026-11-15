@@ -211,8 +211,13 @@ def _cached(key, ttl, fn):
             return e[1]
         raise
 
+def _nitehawk_scored():
+    data = get_next_showtimes()
+    for film in (data.get("films") or [])[:6]:
+        film["rt"] = providers.rt_score(film.get("title"))     # None when there is no confident match
+    return data
 @app.route("/nitehawk")
-def nitehawk():  return jsonify(_cached("nitehawk", 1800, get_next_showtimes))
+def nitehawk():  return jsonify(_cached("nitehawk", 1800, _nitehawk_scored))
 @app.route("/citibike")
 def citibike():  return jsonify(_cached("citibike", 60, providers.citibike))
 @app.route("/airquality")
@@ -317,7 +322,7 @@ def _warm():
        HTTP responses are always instant — prevents HA rest setup-time timeouts."""
     import traceback
     while True:
-        for key, ttl, fn in [("events", 900, providers.events), ("nitehawk", 1800, get_next_showtimes),
+        for key, ttl, fn in [("events", 900, providers.events), ("nitehawk", 1800, _nitehawk_scored),
                              ("nextevent", 180, providers.next_event),
                              ("comedy", 1800, lambda: get_comedy(use_cache=True))]:
             try:

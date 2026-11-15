@@ -620,6 +620,57 @@ def next_event():
     res["modes"] = travel(ev["location"], start, keys=("train", "car", "bike"))["modes"]  # the tile has three rows
     return res
 
+# ------------------------------------------------------- film review scores
+# Rotten Tomatoes has no open API, so read the score off its search page: the first film whose
+# title matches exactly (newest if several share a title). Results are kept on disk for a week
+# (a miss for a day), so each film costs one request a week.
+RT_CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rt-cache.json")
+def _strip_format(t):
+    """'Paprika on 35mm' or 'Alien (40th Anniversary)' -> the film's own title."""
+    return re.sub(r"\s*[(\[].*?[)\]]|\s+(on|in)\s+(35|16|70)\s*mm.*$|\s*:\s*\d+(th|st|nd|rd)\s+anniversary.*$", "", t or "", flags=re.I).strip()
+def _norm_title(t):
+    return re.sub(r"[^a-z0-9]+", " ", _strip_format(t).lower()).strip()
+
+def rt_score(title):
+    """Tomatometer percent for a film title, or None when there is no confident match."""
+    key = _norm_title(title)
+    if not key:
+        return None
+    try:
+        with open(RT_CACHE) as f:
+            cache = json.load(f)
+    except Exception:
+        cache = {}
+    hit = cache.get(key)
+    if hit and time.time() - hit["ts"] < (7 * 86400 if hit["score"] is not None else 86400):
+        return hit["score"]
+    score = None
+    try:
+        page = requests.get("https://www.rottentomatoes.com/search", params={"search": _strip_format(title)},
+                            headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/126 Safari/537.36"},
+                            timeout=8).text
+        found = []
+        for attrs, body in re.findall(r"<search-page-media-row(.*?)>(.*?)</search-page-media-row>", page, re.S):
+            a = dict(re.findall(r'([a-z-]+)="([^"]*)"', attrs))
+            name = re.search(r'slot="title"[^>]*>\s*([^<]+)', body)
+            href = re.search(r'href="([^"]+)"', body)
+            if not name or not href or "/m/" not in href.group(1):          # films only, not TV
+                continue
+            if _norm_title(ihtml.unescape(name.group(1))) == key and (a.get("tomatometer-score") or "").isdigit():
+                found.append((int(a.get("release-year") or 0), int(a["tomatometer-score"])))
+        if found:
+            score = max(found)[1]
+    except Exception:
+        return hit["score"] if hit else None      # network trouble: keep what we had, do not cache a miss
+    cache[key] = {"score": score, "ts": time.time()}
+    cache = {k: v for k, v in cache.items() if time.time() - v["ts"] < 30 * 86400}
+    try:
+        with open(RT_CACHE, "w") as f:
+            json.dump(cache, f)
+    except Exception:
+        pass
+    return score
+
 # -------------------------------------------------------------- live cams
 # YouTube live streams end and get new ids without warning, so the page asks which of
 # these are live right now and rotates through only those. Order = rotation order;

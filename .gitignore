@@ -26,3 +26,4 @@ feeds-verify/local_config.py
 feeds-verify/picks.json
 feeds-verify/webapp/preview.html
 feeds-verify/.env
+feeds-verify/rt-cache.json

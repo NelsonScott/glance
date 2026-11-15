@@ -185,7 +185,7 @@
   function renderNitehawk(nh) {
     const films = ((nh && nh.films) || []).slice(0, 3);
     qs('.nite .rows').innerHTML = films.length ? films.map(f =>
-      `<div class="row"><div class="title">${esc(f.title)}</div><div class="times">` +
+      `<div class="row"><div class="title">${esc(f.title)}</div>${f.rt != null ? `<span class="rt ${f.rt >= 60 ? 'fresh' : 'rotten'}" title="Rotten Tomatoes">${f.rt}%</span>` : ''}<div class="times">` +
       (f.showtimes || []).map(s => `<span${s.status === 'sold_out' ? ' style="opacity:.4;text-decoration:line-through"' : ''}>${esc(s.time)}</span>`).join('') +
       `</div></div>`).join('') : '<div class="row"><div class="title">No showtimes left today</div></div>';
   }
