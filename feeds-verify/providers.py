@@ -673,16 +673,31 @@ def rt_score(title):
 
 # -------------------------------------------------------------- live cams
 # YouTube live streams end and get new ids without warning, so the page asks which of
-# these are live right now and rotates through only those. Order = rotation order;
-# the last two are spares that fill in when an earlier one is down.
+# these are live right now and rotates through only those.
+# Nature cams come first. Each has a time zone and the local hours it is worth watching
+# (a meadow at 3 am is a black rectangle; an aurora cam at noon is a grey one), so the
+# rotation follows daylight around the world. hours=(start, end) local, end exclusive;
+# start > end wraps past midnight; None = any time.
 CAMS = [
-    {"id": "ZxCeWQ3Lcig", "label": "Times Square", "sub": "Broadway & 7th Av · New York"},
-    {"id": "l7b5RFAkKhY", "label": "NYC Harbor", "sub": "Brooklyn · New York"},
-    {"id": "DjdUEyjx8GM", "label": "Shinjuku", "sub": "Kabukichō · Tokyo"},
-    {"id": "dfVK7ld38Ys", "label": "Shibuya", "sub": "Scramble Crossing · Tokyo"},
-    {"id": "tErYxn2UM5Y", "label": "Brooklyn Bridge", "sub": "East River · New York"},
-    {"id": "KHy_n-EMWY8", "label": "Times Square Crossroads", "sub": "Midtown · New York"},
+    {"id": "gxcQJ8pJF0c", "label": "Mount Fuji", "sub": "Fumotoppara meadow · Japan", "tz": "Asia/Tokyo", "hours": (6, 17)},
+    {"id": "Iv2VUE_UhRQ", "label": "Kamikochi", "sub": "Kappa Bridge · Japanese Alps", "tz": "Asia/Tokyo", "hours": (6, 17)},
+    {"id": "F0GOOP82094", "label": "Forest clearing", "sub": "Wildlife cam · Denmark", "tz": "Europe/Copenhagen", "hours": (7, 17)},
+    {"id": "enYFXf8u7Lc", "label": "Swiss Alps", "sub": "Mountain panoramas · Switzerland", "tz": "Europe/Zurich", "hours": (8, 16)},
+    {"id": "XyPU5-pNg5E", "label": "Amboseli", "sub": "Waterhole under Kilimanjaro · Kenya", "tz": "Africa/Nairobi", "hours": (6, 19)},
+    {"id": "AeMUdOPFcXI", "label": "Etosha waterhole", "sub": "Okaukuejo · Namibia", "tz": "Africa/Windhoek", "hours": None},
+    {"id": "o4fKtgPVpoU", "label": "Grand Teton", "sub": "Teton Range · Wyoming", "tz": "America/Denver", "hours": (7, 17)},
+    {"id": "jJI5w_RVGtQ", "label": "Mendenhall Glacier", "sub": "Juneau · Alaska", "tz": "America/Juneau", "hours": (8, 16)},
+    {"id": "uLgdUiT9WZQ", "label": "Dumpling Mountain", "sub": "Katmai · Alaska", "tz": "America/Anchorage", "hours": (9, 16)},
+    {"id": "Fp7l8XASb9Y", "label": "Banzai Pipeline", "sub": "North Shore · Hawaii", "tz": "Pacific/Honolulu", "hours": (7, 18)},
+    {"id": "bdUbACCWmoY", "label": "Mount Fuji", "sub": "Lake Kawaguchiko · Japan", "tz": "Asia/Tokyo", "hours": (6, 17)},
+    {"id": "a0i1Kg6fROg", "label": "Northern lights", "sub": "Churchill · Manitoba", "tz": "America/Winnipeg", "hours": (19, 6)},
+    {"id": "4BrvMGznLTo", "label": "Forest waterfall", "sub": "Recorded loop", "tz": "UTC", "hours": None, "filler": True},
+    # city cams, shown after the nature ones
+    {"id": "l7b5RFAkKhY", "label": "NYC Harbor", "sub": "Brooklyn · New York", "city": True},
+    {"id": "DjdUEyjx8GM", "label": "Shinjuku", "sub": "Kabukichō · Tokyo", "city": True},
+    {"id": "dfVK7ld38Ys", "label": "Shibuya", "sub": "Scramble Crossing · Tokyo", "city": True},
 ]
+NATURE_SLOTS = 3
 def _cam_live(vid):
     """True/False from the watch page, or None when the check itself failed."""
     try:
@@ -694,12 +709,41 @@ def _cam_live(vid):
         return None                      # consent wall or layout change: unknown, not dead
     return '"isLiveNow":true' in html and '"playableInEmbed":false' not in html
 
-def cams(n=4):
-    checked = [(c, _cam_live(c["id"])) for c in CAMS]
-    live = [c for c, ok in checked if ok]
-    if not live and all(ok is None for _, ok in checked):
-        live = CAMS[:n]                  # could not check anything: show the usual ones
-    return {"cams": live[:n], "down": [c["label"] for c, ok in checked if ok is False], "updated": _now()}
+def _cam_in_hours(cam, now=None):
+    if not cam.get("hours"):
+        return True
+    start, end = cam["hours"]
+    h = (now or dt.datetime.now(dt.timezone.utc)).astimezone(ZoneInfo(cam["tz"])).hour
+    return start <= h < end if start < end else (h >= start or h < end)
+
+def cams(now=None):
+    """Up to NATURE_SLOTS nature cams worth watching at this hour, then the city cams;
+       only streams that are live. The starting nature cam moves on each day for variety."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    nature = [c for c in CAMS if not c.get("city")]
+    k = now.astimezone(TZ).timetuple().tm_yday % len(nature)
+    nature = nature[k:] + nature[:k]
+    good = [c for c in nature if _cam_in_hours(c, now) and not c.get("filler")]
+    ordered = good + [c for c in nature if c.get("filler")] + [c for c in nature if c not in good and not c.get("filler")]
+    picked, down, unknown = [], [], 0
+    def take(pool, limit):
+        nonlocal unknown
+        got = []
+        for c in pool:
+            if len(got) >= limit:
+                break
+            ok = _cam_live(c["id"])
+            if ok is None:
+                unknown += 1
+            if ok or ok is None:          # could not check: assume it is up rather than blank the tile
+                got.append(c)
+            else:
+                down.append(c["label"])
+        return got
+    picked += take(ordered, NATURE_SLOTS)
+    picked += take([c for c in CAMS if c.get("city")], 99)
+    return {"cams": [{"id": c["id"], "label": c["label"], "sub": c["sub"]} for c in picked],
+            "down": down, "updated": _now()}
 
 # ------------------------------------------------------ this week for you
 # picks.json is written by a separate job (it is personal and git-ignored). Shape:
